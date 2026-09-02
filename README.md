@@ -68,6 +68,127 @@ Consultar [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Estado
 
-**Fase 0 — Definición e inicialización.**
+**Fase 0 — Definición e inicialización (Completada).**
 
-El siguiente paso es levantar el esqueleto del proyecto y construir un analizador capaz de convertir un PDF en un modelo interno de páginas, bloques, coordenadas, estilos e imágenes.
+El siguiente paso es la **Fase 1 — Análisis de PDF**, construyendo el analizador capaz de convertir un PDF en un modelo interno de páginas, bloques, coordenadas, estilos e imágenes.
+
+Decisiones arquitectónicas iniciales documentadas en [`docs/decisions/0001-initial-stack.md`](docs/decisions/0001-initial-stack.md).
+
+## Guía de ejecución (Windows / PowerShell)
+
+### 1. Requisitos previos
+
+- Python 3.12+ (o gestor `uv`)
+- PowerShell 5.1 o PowerShell 7+
+- Git
+- Docker (opcional, para ejecución contenerizada)
+
+### 2. Crear y activar el entorno virtual
+
+Desde la raíz del repositorio en PowerShell:
+
+```powershell
+# Con Python estándar
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# O alternativamente con uv (recomendado por velocidad)
+uv venv --python 3.12
+.\.venv\Scripts\Activate.ps1
+```
+
+### 3. Instalar dependencias
+
+Instala el paquete en modo editable con las dependencias de desarrollo:
+
+```powershell
+# Con pip
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+
+# O con uv
+uv pip install -e ".[dev]"
+```
+
+### 4. Configurar variables de entorno
+
+Copia el archivo de ejemplo:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+### 5. Iniciar el servidor de desarrollo
+
+Ejecuta FastAPI usando Uvicorn:
+
+```powershell
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Para verificar que el servicio está activo:
+
+```powershell
+# En PowerShell:
+Invoke-RestMethod -Uri http://localhost:8000/health
+```
+
+Respuesta esperada (HTTP 200):
+```json
+{
+  "status": "ok",
+  "app": "Tradux",
+  "version": "0.1.0",
+  "environment": "development"
+}
+```
+
+Documentación interactiva disponible en:
+- Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
+- Redoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+
+### 6. Ejecutar pruebas unitarias
+
+```powershell
+pytest
+```
+
+### 7. Ejecutar linter y formateo
+
+```powershell
+# Verificar código con Ruff
+ruff check .
+
+# Aplicar correcciones automáticas seguras
+ruff check --fix .
+
+# Verificar formato
+ruff format --check .
+```
+
+### 8. Ejecución con Docker
+
+Construir y levantar el contenedor (por defecto expuesto en el puerto host **8008** para evitar colisiones):
+
+```powershell
+# Usando Docker Compose
+docker compose up --build -d
+
+# O con Docker CLI directo
+docker build -t tradux:0.1.0 .
+docker run -d --name tradux-api -p 8008:8000 tradux:0.1.0
+```
+
+Verificar estado:
+
+```powershell
+Invoke-RestMethod -Uri http://localhost:8008/health
+```
+
+Detener el contenedor:
+
+```powershell
+docker compose down
+# O si se ejecutó con Docker directo:
+# docker stop tradux-api; docker rm tradux-api
+```
