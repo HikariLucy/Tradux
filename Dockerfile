@@ -12,12 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy build files and install dependencies
+# Copy build files and application code
 COPY pyproject.toml README.md /app/
-RUN pip install --no-cache-dir .
-
-# Copy application source code
 COPY app /app/app
+RUN pip install --no-cache-dir .
 
 # Create non-privileged user and create runtime directories
 RUN useradd -m -u 1000 tradux && \
