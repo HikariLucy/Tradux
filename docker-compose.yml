@@ -1,0 +1,15 @@
+services:
+  tradux:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tradux:0.1.0
+    container_name: tradux-api
+    ports:
+      - "${TRADUX_PORT:-8008}:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=false
+      - HOST=0.0.0.0
+      - PORT=8000
+    restart: unless-stopped
