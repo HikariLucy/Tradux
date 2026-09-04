@@ -140,3 +140,92 @@ def create_encrypted_pdf_bytes(password: str = "secret") -> bytes:
     )
     doc.close()
     return pdf_bytes
+
+
+def create_layout_fixture_pdf_bytes() -> bytes:
+    """Generate deterministic PDF fixture covering all Phase 3 layout requirements.
+
+    Includes:
+    - Colored vector background rectangle with text;
+    - Text for simple fit;
+    - Text for linguistic expansion;
+    - Tiny box for irresolvable overflow / review_required;
+    - Embedded image nearby;
+    - Untranslated text block;
+    - Rotated 90 degree page.
+    """
+    doc = pymupdf.open()
+
+    # Page 1
+    p1 = doc.new_page(width=595, height=842)
+
+    # Colored vector background rectangle
+    bg_rect = pymupdf.Rect(50, 40, 545, 100)
+    p1.draw_rect(bg_rect, color=(0.8, 0.9, 1.0), fill=(0.8, 0.9, 1.0))
+    p1.insert_textbox(
+        pymupdf.Rect(60, 50, 535, 90),
+        "Text on colored background",
+        fontsize=14,
+        fontname="helv",
+        color=(0.1, 0.2, 0.5),
+    )
+
+    # Simple fit source text
+    p1.insert_textbox(
+        pymupdf.Rect(50, 120, 500, 160),
+        "Simple fit source text sentence.",
+        fontsize=12,
+        fontname="helv",
+    )
+
+    # Text to expand
+    p1.insert_textbox(
+        pymupdf.Rect(50, 180, 500, 230),
+        "Short text to expand considerably.",
+        fontsize=12,
+        fontname="helv",
+    )
+
+    # Box for overflow test (tight 30pt height)
+    p1.insert_textbox(
+        pymupdf.Rect(50, 250, 200, 280),
+        "Overflow source text",
+        fontsize=10,
+        fontname="helv",
+    )
+
+    # Image near text
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), False)
+    pix.clear_with(150)
+    p1.insert_image(pymupdf.Rect(50, 300, 110, 360), pixmap=pix)
+    p1.insert_textbox(
+        pymupdf.Rect(130, 300, 500, 360),
+        "Text situated directly next to image.",
+        fontsize=12,
+        fontname="helv",
+    )
+
+    # Untranslated text block (must remain completely untouched)
+    p1.insert_textbox(
+        pymupdf.Rect(50, 400, 500, 440),
+        "Untranslated block that must remain untouched.",
+        fontsize=11,
+        fontname="cour",
+    )
+
+    # Page 2: Rotated 90 degrees
+    p2 = doc.new_page(width=400, height=600)
+    p2.insert_textbox(
+        pymupdf.Rect(50, 50, 350, 120),
+        "Rotated page source text block.",
+        fontsize=12,
+        fontname="helv",
+    )
+    pix2 = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 30, 30), False)
+    pix2.clear_with(200)
+    p2.insert_image(pymupdf.Rect(50, 200, 100, 250), pixmap=pix2)
+    p2.set_rotation(90)
+
+    pdf_bytes = doc.tobytes()
+    doc.close()
+    return pdf_bytes

@@ -1,8 +1,8 @@
-"""Tests for Phase 2.5 Tradux Web Workbench."""
-
+import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 
+from app.analyzers import DocumentAnalyzer
 from app.core.config import Settings
 from app.domain.models import (
     BoundingBox,
@@ -316,3 +316,258 @@ def test_workbench_translate_forces_mock_even_when_settings_are_openai(
     data = response.json()
     assert data["mode"] == "mock"
     assert data["translated_blocks"] == 2
+
+
+def test_workbench_render_valid_pdf() -> None:
+    """Test POST /api/v1/workbench/render reconstructs and streams downloadable PDF."""
+    from tests.fixtures import create_sample_pdf_bytes
+
+    client = TestClient(app)
+    pdf_bytes = create_sample_pdf_bytes()
+    analyzer = DocumentAnalyzer()
+    doc = analyzer.analyze_bytes(pdf_bytes, filename="sample.pdf")
+
+    # Populate translated_text on first block
+    doc.pages[0].blocks[0].translated_text = "Texto traducido para demostración"
+    json_bytes = doc.model_dump_json().encode("utf-8")
+
+    # 1. Using field 'file'
+    response = client.post(
+        "/api/v1/workbench/render",
+        files={
+            "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+            "document": ("document.json", json_bytes, "application/json"),
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "attachment; filename=" in response.headers.get("content-disposition", "")
+    assert len(response.content) > 0
+
+    # Ensure output is valid PDF
+    out_doc = pymupdf.open(stream=response.content, filetype="pdf")
+    assert out_doc.page_count == doc.page_count
+    out_doc.close()
+
+    # 2. Using alias 'source_pdf'
+    response_alias = client.post(
+        "/api/v1/workbench/render",
+        files={
+            "source_pdf": ("sample.pdf", pdf_bytes, "application/pdf"),
+            "document": ("document.json", json_bytes, "application/json"),
+        },
+    )
+    assert response_alias.status_code == 200
+
+
+def test_workbench_render_large_json_exceeds_1mb_regression() -> None:
+    """Regression test: Document JSON > 1 MiB succeeds (fixes Starlette 1MB limit)."""
+    from tests.fixtures import create_sample_pdf_bytes
+
+    client = TestClient(app)
+    pdf_bytes = create_sample_pdf_bytes()
+    analyzer = DocumentAnalyzer()
+    doc = analyzer.analyze_bytes(pdf_bytes, filename="sample.pdf")
+
+    # Expand the document with text blocks until JSON size exceeds 1.1 MiB
+    base_line = doc.pages[0].blocks[0].lines[0]
+    base_span = base_line.spans[0]
+    repeat_text = (
+        "This is a detailed description block repeated for testing "
+        "large document models. " * 12
+    )
+    extra_blocks = []
+    for i in range(1200):
+        span = base_span.model_copy(update={"text": repeat_text})
+        line = base_line.model_copy(update={"text": repeat_text, "spans": [span]})
+        block = (
+            doc.pages[0]
+            .blocks[0]
+            .model_copy(
+                update={
+                    "reading_order": i + 1,
+                    "text": repeat_text,
+                    "translated_text": f"[ES] {repeat_text}",
+                    "lines": [line],
+                }
+            )
+        )
+        extra_blocks.append(block)
+
+    doc.pages[0].blocks.extend(extra_blocks)
+    large_json_bytes = doc.model_dump_json().encode("utf-8")
+    assert len(large_json_bytes) > 1024 * 1024  # Explicitly assert > 1 MiB
+
+    response = client.post(
+        "/api/v1/workbench/render",
+        files={
+            "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+            "document": ("document.json", large_json_bytes, "application/json"),
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF-")
+
+
+def test_workbench_render_validation_errors() -> None:
+    """Test POST /api/v1/workbench/render error handling for invalid payloads."""
+    from tests.fixtures import create_sample_pdf_bytes
+
+    client = TestClient(app)
+    pdf_bytes = create_sample_pdf_bytes()
+
+    # Missing PDF file
+    res_no_pdf = client.post(
+        "/api/v1/workbench/render",
+        files={"document": ("document.json", b"{}", "application/json")},
+    )
+    assert res_no_pdf.status_code == 400
+
+    # Empty source PDF file
+    res_empty_pdf = client.post(
+        "/api/v1/workbench/render",
+        files={
+            "file": ("empty.pdf", b"", "application/pdf"),
+            "document": ("document.json", b"{}", "application/json"),
+        },
+    )
+    assert res_empty_pdf.status_code == 400
+
+    # Empty document JSON file
+    res_empty_json = client.post(
+        "/api/v1/workbench/render",
+        files={
+            "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+            "document": ("document.json", b"", "application/json"),
+        },
+    )
+    assert res_empty_json.status_code == 400
+
+    # Invalid JSON syntax
+    res_invalid_json = client.post(
+        "/api/v1/workbench/render",
+        files={
+            "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+            "document": ("document.json", b"not-a-valid-json", "application/json"),
+        },
+    )
+    assert res_invalid_json.status_code == 422
+
+    # Invalid UTF-8 encoding
+    res_invalid_utf8 = client.post(
+        "/api/v1/workbench/render",
+        files={
+            "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+            "document": ("document.json", b"\xff\xfe\x00\x00", "application/json"),
+        },
+    )
+    assert res_invalid_utf8.status_code == 400
+
+    # Unsupported Content-Type
+    res_bad_ct = client.post(
+        "/api/v1/workbench/render",
+        files={
+            "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+            "document": ("document.json", b"{}", "text/plain"),
+        },
+    )
+    assert res_bad_ct.status_code == 415
+
+
+def test_workbench_render_json_exceeds_max_limit_413() -> None:
+    """Test POST /api/v1/workbench/render returns 413 when JSON exceeds limit."""
+    from unittest.mock import patch
+
+    from tests.fixtures import create_sample_pdf_bytes
+
+    client = TestClient(app)
+    pdf_bytes = create_sample_pdf_bytes()
+    payload = b'{"filename": "test.pdf", "page_count": 0, "pages": []}'
+
+    with patch("app.api.v1.workbench.MAX_DOCUMENT_JSON_SIZE_BYTES", 10):
+        response = client.post(
+            "/api/v1/workbench/render",
+            files={
+                "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+                "document": ("document.json", payload, "application/json"),
+            },
+        )
+    assert response.status_code == 413
+
+
+def test_workbench_render_validation_error_does_not_leak_document_content(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify that validation errors on invalid Document model JSON return 422
+    and do not leak sensitive document content in response or logs.
+    """
+    import json
+    import logging
+
+    from tests.fixtures import create_sample_pdf_bytes
+
+    client = TestClient(app)
+    pdf_bytes = create_sample_pdf_bytes()
+    secret_marker = "TRADUX_PRIVATE_DOCUMENT_CONTENT_91827"
+
+    # Construct invalid Document JSON where a field has invalid type containing secret
+    invalid_doc_payload = {
+        "filename": "sample.pdf",
+        # int expected; causes ValidationError with input_value
+        "page_count": secret_marker,
+        "pages": [],
+    }
+    raw_json = json.dumps(invalid_doc_payload).encode("utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        response = client.post(
+            "/api/v1/workbench/render",
+            files={
+                "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+                "document": ("document.json", raw_json, "application/json"),
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Invalid Document model JSON payload"
+    assert secret_marker not in response.text
+    assert secret_marker not in caplog.text
+
+
+def test_workbench_render_internal_error_does_not_leak_document_content(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that unexpected rendering errors return 500 and do not leak
+    sensitive document content in response or logs.
+    """
+    import logging
+
+    from tests.fixtures import create_sample_pdf_bytes
+
+    client = TestClient(app)
+    doc = _create_sample_document()
+    pdf_bytes = create_sample_pdf_bytes()
+    secret_marker = "TRADUX_PRIVATE_DOCUMENT_CONTENT_91827"
+
+    def mock_render(*args: object, **kwargs: object) -> None:
+        raise RuntimeError(f"Rendering failed with sensitive info: {secret_marker}")
+
+    monkeypatch.setattr("app.api.v1.workbench.PyMuPDFRenderer.render", mock_render)
+
+    doc_json = doc.model_dump_json().encode("utf-8")
+
+    with caplog.at_level(logging.ERROR):
+        response = client.post(
+            "/api/v1/workbench/render",
+            files={
+                "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+                "document": ("document.json", doc_json, "application/json"),
+            },
+        )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Error rendering PDF"
+    assert secret_marker not in response.text
+    assert secret_marker not in caplog.text

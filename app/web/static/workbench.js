@@ -65,6 +65,8 @@
     // Stepper
     step2: document.getElementById("step-2"),
     step2Status: document.getElementById("step-2-status"),
+    step3: document.getElementById("step-3"),
+    step3Status: document.getElementById("step-3-status"),
 
     // Translation Controls
     selectSourceLang: document.getElementById("select-source-lang"),
@@ -75,6 +77,15 @@
     btnTranslate: document.getElementById("btn-translate"),
     translateSpinner: document.getElementById("translate-spinner"),
     translateBtnText: document.getElementById("translate-btn-text"),
+
+    // Phase 3 Reconstruction Controls
+    renderActions: document.getElementById("render-actions"),
+    statFitBadge: document.getElementById("stat-fit-badge"),
+    statShrunkBadge: document.getElementById("stat-shrunk-badge"),
+    statReviewBadge: document.getElementById("stat-review-badge"),
+    btnDownloadPdf: document.getElementById("btn-download-pdf"),
+    renderSpinner: document.getElementById("render-spinner"),
+    renderBtnText: document.getElementById("render-btn-text"),
 
     // Blocks
     blocksCountBadge: document.getElementById("blocks-count-badge"),
@@ -126,6 +137,17 @@
     cleanPreviewUrl();
     state.selectedFile = file;
     state.previewUrl = URL.createObjectURL(file);
+    state.analyzedDocument = null;
+    state.translatedDocument = null;
+    if (elements.renderActions) elements.renderActions.classList.add("hidden");
+    if (elements.step2) {
+      elements.step2.className = "stepper-item step-pending";
+      elements.step2Status.textContent = "Pendiente de análisis";
+    }
+    if (elements.step3) {
+      elements.step3.className = "stepper-item step-pending";
+      elements.step3Status.textContent = "Disponible tras vista previa";
+    }
 
     elements.selectedFileName.textContent = file.name;
     elements.selectedFileSize.textContent = formatBytes(file.size);
@@ -318,6 +340,12 @@
     elements.step2Status.textContent = "Listo para vista previa";
     elements.btnTranslate.disabled = false;
 
+    if (elements.renderActions) elements.renderActions.classList.add("hidden");
+    if (elements.step3) {
+      elements.step3.className = "stepper-item step-pending";
+      elements.step3Status.textContent = "Disponible tras vista previa";
+    }
+
     // 7. Transition view from upload to workspace
     elements.uploadSection.classList.add("hidden");
     elements.workspaceGrid.classList.remove("hidden");
@@ -427,6 +455,15 @@
         elements.step2.className = "stepper-item step-completed";
         elements.step2Status.textContent = `Vista previa generada (${data.translated_blocks} bloques)`;
 
+        // Unhide Phase 3 Reconstruction Controls
+        if (elements.renderActions) {
+          elements.renderActions.classList.remove("hidden");
+        }
+        if (elements.step3) {
+          elements.step3.className = "stepper-item step-active";
+          elements.step3Status.textContent = "Listo para reconstruir PDF";
+        }
+
         // Refresh blocks table
         recalculateBlocks();
         showAlert(`Vista previa generada con éxito (${data.translated_blocks} bloques procesados con MockTranslator).`, "success");
@@ -437,6 +474,81 @@
         elements.btnTranslate.disabled = false;
         elements.translateSpinner.classList.add("hidden");
         elements.translateBtnText.textContent = "Generar vista previa";
+      }
+    });
+  }
+
+  // PDF Reconstruction Action (PyMuPDFRenderer)
+  if (elements.btnDownloadPdf) {
+    elements.btnDownloadPdf.addEventListener("click", async () => {
+      if (!state.selectedFile || !state.translatedDocument) {
+        showAlert("Debes generar primero una vista previa de traducción antes de reconstruir el PDF.", "warning");
+        return;
+      }
+
+      elements.btnDownloadPdf.disabled = true;
+      if (elements.renderSpinner) elements.renderSpinner.classList.remove("hidden");
+      if (elements.renderBtnText) elements.renderBtnText.textContent = "Reconstruyendo PDF...";
+      showAlert("Reconstruyendo documento PDF con PyMuPDFRenderer...", "info");
+
+      const formData = new FormData();
+      formData.append("file", state.selectedFile);
+      const documentBlob = new Blob(
+        [JSON.stringify(state.translatedDocument)],
+        { type: "application/json" }
+      );
+      formData.append("document", documentBlob, "document.json");
+
+      try {
+        const response = await fetch("/api/v1/workbench/render", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          let errMsg = `Error ${response.status} en la reconstrucción del PDF`;
+          try {
+            const errData = await response.json();
+            if (errData && errData.detail) {
+              errMsg = typeof errData.detail === "string" ? errData.detail : JSON.stringify(errData.detail);
+            }
+          } catch (_) {}
+          throw new Error(errMsg);
+        }
+
+        // Update layout badges from response headers
+        const fitBlocks = response.headers.get("X-Tradux-Fit-Blocks") || "0";
+        const shrunkBlocks = response.headers.get("X-Tradux-Shrunk-Blocks") || "0";
+        const reviewBlocks = response.headers.get("X-Tradux-Review-Blocks") || "0";
+
+        if (elements.statFitBadge) elements.statFitBadge.textContent = `${fitBlocks} ajuste exacto`;
+        if (elements.statShrunkBadge) elements.statShrunkBadge.textContent = `${shrunkBlocks} reducidos`;
+        if (elements.statReviewBadge) elements.statReviewBadge.textContent = `${reviewBlocks} revisión req.`;
+
+        // Trigger file download
+        const blob = await response.blob();
+        const downloadUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        const originalName = state.selectedFile.name.replace(/\.pdf$/i, "");
+        a.download = `${originalName}_tradux.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 2000);
+
+        // Complete Stepper Step 3
+        if (elements.step3) {
+          elements.step3.className = "stepper-item step-completed";
+          elements.step3Status.textContent = "PDF reconstruido y descargado";
+        }
+        showAlert("Documento PDF reconstruido y descargado con éxito.", "success");
+      } catch (err) {
+        showAlert(err.message || "Error al reconstruir el archivo PDF.", "danger");
+      } finally {
+        elements.btnDownloadPdf.disabled = false;
+        if (elements.renderSpinner) elements.renderSpinner.classList.add("hidden");
+        if (elements.renderBtnText) elements.renderBtnText.textContent = "Descargar PDF de demostración 📥";
       }
     });
   }
