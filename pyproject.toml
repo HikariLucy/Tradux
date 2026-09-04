@@ -20,6 +20,7 @@ dependencies = [
     "pydantic>=2.7.0",
     "pydantic-settings>=2.2.0",
     "pymupdf>=1.24.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -56,4 +57,4 @@ known-first-party = ["app"]
 minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-ra -q"
+addopts = "-ra -q --basetemp=.pytest_tmp"
