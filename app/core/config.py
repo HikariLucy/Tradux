@@ -44,6 +44,20 @@ class Settings(BaseSettings):
         description="HTTP timeout in seconds for translation provider",
     )
 
+    # Translation jobs configuration (Phase 4 MVP)
+    job_ttl_seconds: int = Field(
+        default=3600,
+        description="Time-to-live in seconds for ephemeral in-memory jobs",
+    )
+    job_max_retained: int = Field(
+        default=50,
+        description="Maximum number of retained jobs in memory before pruning",
+    )
+    job_max_active: int = Field(
+        default=5,
+        description="Maximum number of concurrent active jobs being processed",
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

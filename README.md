@@ -73,12 +73,14 @@ Consultar [`docs/roadmap.md`](docs/roadmap.md).
 - **Fase 2 — Traducción desacoplada (Completada):** interfaz abstracta `Translator`, servicio `TranslationEngine`, protección estricta de tokens/términos (`protection.py`), proveedor `MockTranslator` determinista y adaptador real HTTP OpenAI-compatible con `httpx`.
 - **Fase 2.5 — Tradux Web Workbench (Completada):** interfaz web desktop-first ligera y editorial (`GET /`) servida con FastAPI + Jinja2 + CSS propio + vanilla JS; previsualización local del PDF en navegador, extracción y análisis documental mediante el endpoint real `POST /api/v1/documents/analyze`, métricas estructurales del `DocumentModel`, controles de idiomas y términos protegidos, vista de demostración del pipeline mediante `POST /api/v1/workbench/translate` (forzando `MockTranslator` offline y sin coste), comparativa de bloques fuente ↔ traducción.
 - **Fase 3 — Motor de layout y reconstrucción de PDF (Completada):** motor de decisiones geométricas y reflow (`LayoutEngine`), medición ultrarrápida no destructiva (`TextMeasurer`), resolución determinista de tipografías a Base-14 (`app.layout.fonts`), selección de estilo representativo por ponderación de caracteres, renderizador PyMuPDF de alta fidelidad (`PyMuPDFRenderer`), preservación de vectores de fondo, imágenes y rotación de página, política de seguridad ante desbordamiento (`REVIEW_REQUIRED` sin mutilar texto original), script CLI `scripts/render_translated_document.py` y descarga de demostración interactiva en Web Workbench (`POST /api/v1/workbench/render`).
+- **Fase 4 — Aplicación MVP (Completada):** orquestación end-to-end de trabajos de traducción documental (`DocumentAnalyzer` → `TranslationEngine` → `LayoutEngine` → `PyMuPDFRenderer`), modelo de trabajos y gestor efímero en memoria (`JobStore`) con control de capacidad y TTL, API pública de trabajos (`/api/v1/jobs`), endpoint seguro de capacidades (`/api/v1/capabilities`), soporte dual para modo demostración (`MockTranslator` determinista) y proveedor configurado en servidor (OpenAI), protección UX contra consumo accidental de tokens mediante modal explícito de confirmación, seguimiento visual reactivo por etapas y descarga directa del PDF traducido preservando bloques con desbordamiento.
 
 Decisiones arquitectónicas:
 - [`docs/decisions/0001-initial-stack.md`](docs/decisions/0001-initial-stack.md)
 - [`docs/decisions/0002-document-model-and-analyzer.md`](docs/decisions/0002-document-model-and-analyzer.md)
 - [`docs/decisions/0003-translation-engine-and-provider-abstraction.md`](docs/decisions/0003-translation-engine-and-provider-abstraction.md)
 - [`docs/decisions/0004-layout-engine-and-pdf-reconstruction.md`](docs/decisions/0004-layout-engine-and-pdf-reconstruction.md)
+- [`docs/decisions/0005-mvp-job-orchestration.md`](docs/decisions/0005-mvp-job-orchestration.md)
 
 ## Guía de ejecución (Windows / PowerShell)
 
@@ -153,23 +155,67 @@ Documentación interactiva disponible en:
 - Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
 - Redoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
-### 6. Usar el Tradux Web Workbench
+### 6. Usar el Tradux Web Workbench (Mesa de traducción documental)
 
 Abre en tu navegador la raíz del servidor local:
 - **Web Workbench:** [http://localhost:8000/](http://localhost:8000/)
 
-Flujo de trabajo en la interfaz:
+Flujo de trabajo en la interfaz MVP:
 1. **Seleccionar documento:** arrastra o selecciona un archivo PDF digital. El navegador lo previsualizará de inmediato mediante un Object URL local, sin subirlo innecesariamente.
 2. **Analizar documento:** pulsa el botón *Analizar documento* para invocar el endpoint real `POST /api/v1/documents/analyze`. La interfaz mostrará métricas estructurales (páginas, bloques, líneas, spans, imágenes, fuentes únicas y dimensiones).
 3. **Configurar traducción:** selecciona idioma de origen (o detección automática), idioma de destino y añade términos protegidos como etiquetas interactivas.
-4. **Vista de traducción:** pulsa *Generar vista previa* para procesar los bloques a través del endpoint de desarrollo `POST /api/v1/workbench/translate`.
-   > **Aviso:** La vista previa utiliza estrictamente `MockTranslator` para garantizar determinismo, cero consumo de tokens y cero llamadas de red externas.
-5. **Reconstruir y descargar PDF:** tras generar la vista previa, se activa la sección *3. Layout & Reconstrucción* con el desglose de bloques ajustados (`fit`), reducidos (`shrunk`) y pendientes de revisión (`review`). Pulsa *Descargar PDF de demostración* para reconstruir el PDF en memoria con `PyMuPDFRenderer` y descargarlo directamente (`_tradux.pdf`).
-6. **Inspección de bloques:** revisa la tabla inferior comparativa entre texto fuente y texto traducido, con paginación y filtro por página.
+4. **Seleccionar modo de ejecución:**
+   - **Modo de demostración (`demo`):** utiliza `MockTranslator`, garantizando determinismo, coste cero y ejecución 100% offline.
+   - **Proveedor configurado en servidor (`configured`):** utiliza la clave y proveedor configurados en el servidor (ej. OpenAI). Si no hay credenciales configuradas, la opción permanece deshabilitada con un mensaje informativo.
+5. **Iniciar trabajo de traducción:** pulsa *Iniciar trabajo de traducción*. Si se seleccionó un proveedor real, se abrirá un modal de confirmación con el resumen de páginas, bloques y aviso de consumo para evitar gastos accidentales.
+6. **Seguimiento reactivo de etapas:** la tarjeta de estado monitorea en vivo las etapas (`analizando` → `traduciendo` → `layout` → `reconstruyendo` → `completado`).
+7. **Descargar resultado:** al finalizar, pulsa *Descargar PDF traducido 📥* para obtener el documento reconstruido. Si existen bloques con desbordamiento (`review_required`), una alerta destacará que dichos bloques conservaron su texto original para evitar pérdidas de contenido.
 
-### 7. Analizar, traducir y reconstruir por API / CLI
+### 7. API REST de Tradux
 
-#### Vía endpoint HTTP (`POST /api/v1/documents/analyze`)
+#### Capacidades del servidor (`GET /api/v1/capabilities`)
+
+Consulta de forma segura los modos y proveedores disponibles sin exponer credenciales:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/capabilities"
+```
+
+#### Ciclo de vida de trabajos (`/api/v1/jobs`)
+
+**Crear un trabajo de traducción (`POST /api/v1/jobs`):**
+
+```powershell
+$form = @{
+    file = Get-Item -Path "ruta\al\documento.pdf"
+    target_language = "es"
+    source_language = "en"
+    mode = "demo" # O "configured" si el servidor tiene credenciales activas
+    protected_terms = "Tradux,PyMuPDF"
+}
+$job = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/jobs" -Method Post -Form $form
+$jobId = $job.job_id
+```
+
+**Consultar estado del trabajo (`GET /api/v1/jobs/{job_id}`):**
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/jobs/$jobId"
+```
+
+**Descargar el PDF traducido (`GET /api/v1/jobs/{job_id}/result`):**
+
+```powershell
+Invoke-WebRequest -Uri "http://localhost:8000/api/v1/jobs/$jobId/result" -OutFile "salida_traducida.pdf"
+```
+
+**Eliminar trabajo y liberar memoria (`DELETE /api/v1/jobs/{job_id}`):**
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/jobs/$jobId" -Method Delete
+```
+
+#### Análisis documental directo (`POST /api/v1/documents/analyze`)
 
 ```powershell
 # En PowerShell:

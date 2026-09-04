@@ -184,14 +184,14 @@
                 <span class="step-indicator" aria-hidden="true">2</span>
                 <div class="step-content">
                   <span class="step-name">2. Traducción por bloques</span>
-                  <span class="step-status" id="step-2-status">Listo para vista previa</span>
+                  <span class="step-status" id="step-2-status">Listo para procesar</span>
                 </div>
               </li>
               <li class="stepper-item step-pending" id="step-3">
                 <span class="step-indicator" aria-hidden="true">3</span>
                 <div class="step-content">
                   <span class="step-name">3. Layout & Reconstrucción</span>
-                  <span class="step-status" id="step-3-status">Disponible tras vista previa</span>
+                  <span class="step-status" id="step-3-status">Encolado para job</span>
                 </div>
               </li>
               <li class="stepper-item step-pending" id="step-4">
@@ -203,7 +203,7 @@
               </li>
             </ol>
             <p class="stepper-notice">
-              <strong>Fase 3 activa:</strong> Puedes descargar un PDF reconstruido de demostración tras generar la vista previa. Esta reconstrucción valida la preservación de fondos, imágenes y rotación con sustitución local de texto.
+              <strong>Fase 4 MVP activa:</strong> Flujo integral <code>subir → traducir → reconstruir → descargar</code> ejecutado mediante trabajos asíncronos en memoria.
             </p>
           </div>
 
@@ -250,35 +250,123 @@
               <span class="form-hint">Términos literales que no deben traducirse bajo ninguna circunstancia.</span>
             </div>
 
-            <div class="demo-notice-banner" role="note" aria-label="Aviso de modo de demostración">
+            <!-- Translation Mode Selector -->
+            <div class="form-group mode-selector-group">
+              <label class="form-label">Modo de traducción</label>
+              <div class="mode-options-grid">
+                <label class="mode-option active" id="mode-option-demo">
+                  <input type="radio" name="translation-mode" id="radio-mode-demo" value="demo" checked>
+                  <div class="mode-option-content">
+                    <div class="mode-option-header">
+                      <strong class="mode-title">Demostración</strong>
+                      <span class="badge badge-accent">Mock · Sin coste</span>
+                    </div>
+                    <p class="mode-description">
+                      Valida el pipeline y conserva maquetación. Cero red, cero coste.
+                    </p>
+                  </div>
+                </label>
+
+                <label class="mode-option" id="mode-option-configured">
+                  <input type="radio" name="translation-mode" id="radio-mode-configured" value="configured">
+                  <div class="mode-option-content">
+                    <div class="mode-option-header">
+                      <strong class="mode-title">Traducción real</strong>
+                      <span class="badge badge-subtle" id="configured-provider-badge">Servidor</span>
+                    </div>
+                    <p class="mode-description" id="configured-provider-desc">
+                      Traducción lingüística mediante proveedor configurado.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Notice for Demo Mode -->
+            <div class="demo-notice-banner" id="demo-notice-banner" role="note" aria-label="Aviso de modo de demostración">
               <div class="demo-notice-header">
                 <strong class="demo-notice-tag">Modo de demostración</strong>
                 <span class="badge badge-mono">MockTranslator</span>
               </div>
               <p class="demo-notice-text">
-                La vista previa valida el pipeline y conserva la estructura.<br>
+                El trabajo valida el pipeline completo y conserva la estructura.<br>
                 <strong>No realiza traducción lingüística real.</strong>
               </p>
             </div>
 
+            <!-- Notice for Real/Configured Mode -->
+            <div class="cost-notice-banner hidden" id="cost-notice-banner" role="note" aria-label="Aviso de proveedor real">
+              <div class="demo-notice-header">
+                <strong class="cost-notice-tag">⚠️ Proveedor activo en servidor</strong>
+                <span class="badge badge-mono" id="cost-provider-badge">openai</span>
+              </div>
+              <p class="cost-notice-text">
+                El trabajo enviará el texto documental al proveedor externo.<br>
+                <strong>Requiere confirmación previa antes de iniciar el procesamiento.</strong>
+              </p>
+            </div>
+
+            <!-- Primary Action Button: Start MVP Translation Job -->
             <div class="form-actions">
-              <button type="button" class="btn btn-primary btn-full" id="btn-translate">
-                <span class="btn-spinner hidden" id="translate-spinner" aria-hidden="true"></span>
-                <span class="btn-label" id="translate-btn-text">Generar vista previa</span>
+              <button type="button" class="btn btn-primary btn-full btn-start-job" id="btn-translate">
+                <span class="btn-spinner hidden" id="job-spinner" aria-hidden="true"></span>
+                <span class="btn-label" id="job-btn-text">Iniciar trabajo de traducción</span>
+                <span class="visually-hidden" id="translate-btn-text">Generar vista previa</span>
               </button>
             </div>
 
-            <div class="render-actions hidden" id="render-actions">
-              <div class="layout-summary-stats" id="layout-summary-stats">
-                <span class="badge badge-subtle" id="stat-fit-badge">0 fit</span>
-                <span class="badge badge-subtle" id="stat-shrunk-badge">0 shrunk</span>
-                <span class="badge badge-subtle" id="stat-review-badge">0 review</span>
+            <!-- Job Progress & Status Card -->
+            <div class="job-card hidden" id="job-card" role="region" aria-label="Estado del trabajo de traducción">
+              <div class="job-card-header">
+                <span class="job-badge" id="job-id-badge">Job #—</span>
+                <span class="job-status-badge badge badge-subtle" id="job-status-badge">Iniciando</span>
               </div>
-              <button type="button" class="btn btn-secondary btn-full" id="btn-download-pdf">
-                <span class="btn-spinner hidden" id="render-spinner" aria-hidden="true"></span>
-                <span class="btn-label" id="render-btn-text">Descargar PDF de demostración 📥</span>
-              </button>
-              <span class="form-hint text-center">PDF reconstruido localmente con PyMuPDFRenderer.</span>
+
+              <!-- Step-by-step progress tracking -->
+              <div class="job-stages" id="job-stages">
+                <div class="job-stage-item" id="stage-analyzing">
+                  <span class="stage-icon">○</span>
+                  <span class="stage-label">Analizando documento</span>
+                </div>
+                <div class="job-stage-item" id="stage-translating">
+                  <span class="stage-icon">○</span>
+                  <span class="stage-label" id="stage-translating-label">Traduciendo bloques</span>
+                </div>
+                <div class="job-stage-item" id="stage-layout">
+                  <span class="stage-icon">○</span>
+                  <span class="stage-label">Calculando layout</span>
+                </div>
+                <div class="job-stage-item" id="stage-rendering">
+                  <span class="stage-icon">○</span>
+                  <span class="stage-label">Reconstruyendo PDF</span>
+                </div>
+              </div>
+
+              <!-- Layout metrics when completed -->
+              <div class="job-results hidden" id="job-results">
+                <div class="layout-summary-stats" id="job-layout-stats">
+                  <span class="badge badge-subtle" id="job-stat-fit">0 ajuste</span>
+                  <span class="badge badge-subtle" id="job-stat-shrunk">0 reducidos</span>
+                  <span class="badge badge-subtle" id="job-stat-expanded">0 expandidos</span>
+                  <span class="badge badge-subtle" id="job-stat-review">0 revisión</span>
+                </div>
+
+                <!-- Review warning banner if review_required > 0 -->
+                <div class="review-warning-banner hidden" id="job-review-warning" role="alert">
+                  <strong>⚠️ Atención:</strong> Bloques con desbordamiento requieren revisión manual. Se preservó el texto original para evitar pérdidas.
+                </div>
+
+                <!-- Download button -->
+                <a href="#" class="btn btn-secondary btn-full btn-download" id="btn-download-job-result" download>
+                  Descargar PDF traducido 📥
+                </a>
+              </div>
+
+              <!-- Error alert if job failed -->
+              <div class="job-error-banner alert alert-danger hidden" id="job-error-banner" role="alert">
+                <span class="alert-message" id="job-error-message">Error en el procesamiento</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-retry-job">Reintentar</button>
+              </div>
             </div>
           </form>
         </div>
@@ -325,6 +413,52 @@
           </div>
         </div>
       </section>
+    </div>
+
+    <!-- Confirmation Modal for Real Configured Translation -->
+    <div class="modal-overlay hidden" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 id="confirm-modal-title" class="modal-title">Confirmar traducción con proveedor real</h2>
+          <button type="button" class="modal-close-btn" id="btn-modal-close" aria-label="Cerrar modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-intro">
+            Estás a punto de iniciar una traducción ejecutando llamadas al proveedor configurado en el servidor.
+          </p>
+          <div class="modal-summary">
+            <dl class="modal-summary-list">
+              <div class="modal-row">
+                <dt>Archivo:</dt>
+                <dd id="modal-filename">-</dd>
+              </div>
+              <div class="modal-row">
+                <dt>Páginas analizadas:</dt>
+                <dd id="modal-pages">-</dd>
+              </div>
+              <div class="modal-row">
+                <dt>Bloques de texto:</dt>
+                <dd id="modal-blocks">-</dd>
+              </div>
+              <div class="modal-row">
+                <dt>Idioma destino:</dt>
+                <dd id="modal-target-lang">-</dd>
+              </div>
+              <div class="modal-row">
+                <dt>Proveedor configurado:</dt>
+                <dd id="modal-provider">-</dd>
+              </div>
+            </dl>
+          </div>
+          <div class="modal-warning" id="modal-warning-box">
+            <strong>Aviso de consumo:</strong> Esta operación consumirá recursos del proveedor según la longitud del texto. Para documentos de gran volumen, el proceso puede requerir varios minutos.
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-modal-cancel">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="btn-modal-confirm">Confirmar y ejecutar traducción</button>
+        </div>
+      </div>
     </div>
   </main>
 
