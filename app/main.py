@@ -1,10 +1,13 @@
 """Main FastAPI application entrypoint for Tradux."""
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.api.v1.health import router as health_router
 from app.core.config import get_settings
+from app.web.router import STATIC_DIR
+from app.web.router import router as web_router
 
 
 def create_app() -> FastAPI:
@@ -26,6 +29,12 @@ def create_app() -> FastAPI:
 
     # Mount versioned API routes under configured prefix
     application.include_router(api_router, prefix=settings.api_v1_prefix)
+
+    # Mount static files for Web Workbench
+    application.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    # Mount web workbench interface at root
+    application.include_router(web_router)
 
     return application
 

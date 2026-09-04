@@ -71,6 +71,7 @@ Consultar [`docs/roadmap.md`](docs/roadmap.md).
 - **Fase 0 — Definición e inicialización (Completada).**
 - **Fase 1 — Análisis de PDF (Completada):** motor de análisis documental (`DocumentAnalyzer`), modelos de dominio desacoplados (`Document`, `Page`, `TextBlock`, `TextLine`, `TextSpan`, `ImageElement`, `BoundingBox`), endpoint HTTP `POST /api/v1/documents/analyze` y serialización canónica JSON.
 - **Fase 2 — Traducción desacoplada (Completada):** interfaz abstracta `Translator`, servicio `TranslationEngine`, protección estricta de tokens/términos (`protection.py`), proveedor `MockTranslator` determinista y adaptador real HTTP OpenAI-compatible con `httpx`.
+- **Fase 2.5 — Tradux Web Workbench (Completada):** interfaz web desktop-first ligera y editorial (`GET /`) servida con FastAPI + Jinja2 + CSS propio + vanilla JS; previsualización local del PDF en navegador, extracción y análisis documental mediante el endpoint real `POST /api/v1/documents/analyze`, métricas estructurales del `DocumentModel`, controles de idiomas y términos protegidos, vista de demostración del pipeline mediante `POST /api/v1/workbench/translate` (forzando `MockTranslator` offline y sin coste), comparativa de bloques fuente ↔ traducción e indicador de roadmap documental (aclarando que la generación del PDF traducido llegará en la Fase 3).
 
 Decisiones arquitectónicas:
 - [`docs/decisions/0001-initial-stack.md`](docs/decisions/0001-initial-stack.md)
@@ -150,7 +151,20 @@ Documentación interactiva disponible en:
 - Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
 - Redoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
-### 6. Analizar documentos
+### 6. Usar el Tradux Web Workbench
+
+Abre en tu navegador la raíz del servidor local:
+- **Web Workbench:** [http://localhost:8000/](http://localhost:8000/)
+
+Flujo de trabajo en la interfaz:
+1. **Seleccionar documento:** arrastra o selecciona un archivo PDF digital. El navegador lo previsualizará de inmediato mediante un Object URL local, sin subirlo innecesariamente.
+2. **Analizar documento:** pulsa el botón *Analizar documento* para invocar el endpoint real `POST /api/v1/documents/analyze`. La interfaz mostrará métricas estructurales (páginas, bloques, líneas, spans, imágenes, fuentes únicas y dimensiones).
+3. **Configurar traducción:** selecciona idioma de origen (o detección automática), idioma de destino y añade términos protegidos como etiquetas interactivas.
+4. **Vista de traducción:** pulsa *Ejecutar vista de traducción* para procesar los bloques a través del endpoint de desarrollo `POST /api/v1/workbench/translate`.
+   > **Importante:** La vista visual de traducción utiliza de forma estricta y forzada `MockTranslator` para garantizar determinismo, cero consumo de tokens y cero llamadas de red externas. En esta fase aún **NO** se genera ni descarga el archivo PDF traducido; esa capacidad corresponde a la **Fase 3 (LayoutEngine & Reconstrucción)**.
+5. **Inspección de bloques:** revisa la tabla inferior comparativa entre texto fuente y texto traducido, con paginación y filtro por página.
+
+### 7. Analizar y traducir por API / CLI
 
 #### Vía endpoint HTTP (`POST /api/v1/documents/analyze`)
 
