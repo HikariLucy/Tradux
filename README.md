@@ -68,11 +68,12 @@ Consultar [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Estado
 
-**Fase 0 — Definición e inicialización (Completada).**
+- **Fase 0 — Definición e inicialización (Completada).**
+- **Fase 1 — Análisis de PDF (Completada):** motor de análisis documental (`DocumentAnalyzer`), modelos de dominio desacoplados (`Document`, `Page`, `TextBlock`, `TextLine`, `TextSpan`, `ImageElement`, `BoundingBox`), endpoint HTTP `POST /api/v1/documents/analyze` y serialización canónica JSON.
 
-El siguiente paso es la **Fase 1 — Análisis de PDF**, construyendo el analizador capaz de convertir un PDF en un modelo interno de páginas, bloques, coordenadas, estilos e imágenes.
-
-Decisiones arquitectónicas iniciales documentadas en [`docs/decisions/0001-initial-stack.md`](docs/decisions/0001-initial-stack.md).
+Decisiones arquitectónicas:
+- [`docs/decisions/0001-initial-stack.md`](docs/decisions/0001-initial-stack.md)
+- [`docs/decisions/0002-document-model-and-analyzer.md`](docs/decisions/0002-document-model-and-analyzer.md)
 
 ## Guía de ejecución (Windows / PowerShell)
 
@@ -147,13 +148,95 @@ Documentación interactiva disponible en:
 - Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
 - Redoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
-### 6. Ejecutar pruebas unitarias
+### 6. Analizar documentos
+
+#### Vía endpoint HTTP (`POST /api/v1/documents/analyze`)
+
+```powershell
+# En PowerShell:
+$form = @{
+    file = Get-Item -Path "ruta\al\documento.pdf"
+}
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/documents/analyze" -Method Post -Form $form
+```
+
+O mediante `curl`:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/documents/analyze" \
+  -F "file=@ruta/al/documento.pdf"
+```
+
+#### Vía script CLI
+
+Para analizar cualquier PDF local (incluyendo el benchmark manual MICRON si existe fuera del repo) y generar un JSON de inspección:
+
+```powershell
+python scripts/analyze_document.py ruta/a/documento.pdf [--output output/analisis.json]
+```
+
+#### Ejemplo resumido del JSON producido
+
+```json
+{
+  "filename": "documento.pdf",
+  "page_count": 2,
+  "metadata": {
+    "title": "Manual de Referencia"
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "width": 595.0,
+      "height": 842.0,
+      "rotation": 0,
+      "blocks": [
+        {
+          "text": "Título del documento",
+          "bbox": { "x0": 72.0, "y0": 60.5, "x1": 328.0, "y1": 85.0 },
+          "lines": [
+            {
+              "text": "Título del documento",
+              "bbox": { "x0": 72.0, "y0": 60.5, "x1": 328.0, "y1": 85.0 },
+              "spans": [
+                {
+                  "text": "Título del documento",
+                  "bbox": { "x0": 72.0, "y0": 60.5, "x1": 328.0, "y1": 85.0 },
+                  "font_name": "Helvetica",
+                  "font_size": 18.0,
+                  "color": "#000000",
+                  "flags": 0,
+                  "origin": [72.0, 80.0]
+                }
+              ]
+            }
+          ],
+          "reading_order": 0,
+          "block_type": "text"
+        }
+      ],
+      "images": [
+        {
+          "image_id": "p001-img001",
+          "bbox": { "x0": 400.0, "y0": 80.0, "x1": 460.0, "y1": 140.0 },
+          "width": 20,
+          "height": 20,
+          "xref": 5,
+          "format": "png"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 7. Ejecutar pruebas unitarias
 
 ```powershell
 pytest
 ```
 
-### 7. Ejecutar linter y formateo
+### 8. Ejecutar linter y formateo
 
 ```powershell
 # Verificar código con Ruff
@@ -166,7 +249,7 @@ ruff check --fix .
 ruff format --check .
 ```
 
-### 8. Ejecución con Docker
+### 9. Ejecución con Docker
 
 Construir y levantar el contenedor (por defecto expuesto en el puerto host **8008** para evitar colisiones):
 
