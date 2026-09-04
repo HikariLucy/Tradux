@@ -95,6 +95,10 @@ class TextBlock(BaseModel):
         default="text",
         description="Block classification (e.g. text)",
     )
+    translated_text: str | None = Field(
+        default=None,
+        description="Translated verbatim text of the block",
+    )
 
 
 class ImageElement(BaseModel):

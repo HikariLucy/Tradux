@@ -70,10 +70,12 @@ Consultar [`docs/roadmap.md`](docs/roadmap.md).
 
 - **Fase 0 — Definición e inicialización (Completada).**
 - **Fase 1 — Análisis de PDF (Completada):** motor de análisis documental (`DocumentAnalyzer`), modelos de dominio desacoplados (`Document`, `Page`, `TextBlock`, `TextLine`, `TextSpan`, `ImageElement`, `BoundingBox`), endpoint HTTP `POST /api/v1/documents/analyze` y serialización canónica JSON.
+- **Fase 2 — Traducción desacoplada (Completada):** interfaz abstracta `Translator`, servicio `TranslationEngine`, protección estricta de tokens/términos (`protection.py`), proveedor `MockTranslator` determinista y adaptador real HTTP OpenAI-compatible con `httpx`.
 
 Decisiones arquitectónicas:
 - [`docs/decisions/0001-initial-stack.md`](docs/decisions/0001-initial-stack.md)
 - [`docs/decisions/0002-document-model-and-analyzer.md`](docs/decisions/0002-document-model-and-analyzer.md)
+- [`docs/decisions/0003-translation-engine-and-provider-abstraction.md`](docs/decisions/0003-translation-engine-and-provider-abstraction.md)
 
 ## Guía de ejecución (Windows / PowerShell)
 
@@ -175,6 +177,16 @@ Para analizar cualquier PDF local (incluyendo el benchmark manual MICRON si exis
 python scripts/analyze_document.py ruta/a/documento.pdf [--output output/analisis.json]
 ```
 
+Para traducir el modelo de documento analizado (o directamente un PDF) usando el motor desacoplado:
+
+```powershell
+# Usando proveedor mock determinista (offline por defecto):
+python scripts/translate_document.py output/analisis.json --target es --provider mock --output output/traducido.json
+
+# O usando el adaptador HTTP real (requiere TRANSLATION_API_KEY en entorno):
+python scripts/translate_document.py output/analisis.json --target es --provider openai --output output/traducido.json
+```
+
 #### Ejemplo resumido del JSON producido
 
 ```json
@@ -193,6 +205,7 @@ python scripts/analyze_document.py ruta/a/documento.pdf [--output output/analisi
       "blocks": [
         {
           "text": "Título del documento",
+          "translated_text": "[ES] Título del documento",
           "bbox": { "x0": 72.0, "y0": 60.5, "x1": 328.0, "y1": 85.0 },
           "lines": [
             {

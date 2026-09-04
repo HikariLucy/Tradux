@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +20,28 @@ class Settings(BaseSettings):
     output_dir: str = Field(default="output", description="Output files directory")
     max_upload_size_mb: int = Field(
         default=50, description="Maximum upload file size in megabytes"
+    )
+
+    # Translation engine configuration
+    translation_provider: str = Field(
+        default="mock",
+        description="Active translation provider: 'mock' or 'openai'",
+    )
+    translation_api_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        description="API base URL for OpenAI-compatible translation provider",
+    )
+    translation_api_key: SecretStr | None = Field(
+        default=None,
+        description="API secret key for translation provider",
+    )
+    translation_model: str = Field(
+        default="gpt-4o-mini",
+        description="Model name for translation provider",
+    )
+    translation_timeout_seconds: float = Field(
+        default=30.0,
+        description="HTTP timeout in seconds for translation provider",
     )
 
     model_config = SettingsConfigDict(
