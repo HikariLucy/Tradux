@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ app_name }} · Mesa de traducción documental</title>
+  <link rel="stylesheet" href="/static/workbench.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header" role="banner">
+    <div class="header-content">
+      <div class="brand-group">
+        <span class="brand-name">Tradux</span>
+        <span class="brand-divider">/</span>
+        <span class="brand-descriptor">Mesa de traducción documental</span>
+      </div>
+      <div class="header-meta">
+        <span class="badge badge-subtle" id="active-doc-badge">Sin documento</span>
+        <span class="badge badge-accent">Mesa local · v{{ app_version }}</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="workbench-layout" id="workbench-main" role="main">
+    <!-- Notifications / Alerts Container -->
+    <div class="status-bar" id="status-bar" role="status" aria-live="polite">
+      <div class="alert alert-info hidden" id="status-alert">
+        <span class="alert-icon" aria-hidden="true">ℹ</span>
+        <span class="alert-message" id="status-message"></span>
+      </div>
+    </div>
+
+    <!-- State 1: Upload / Dropzone (Initial View) -->
+    <section class="upload-section" id="upload-section" aria-labelledby="upload-heading">
+      <div class="upload-card">
+        <div class="upload-header">
+          <h1 id="upload-heading" class="upload-title">Traduce documentos conservando su estructura.</h1>
+          <p class="upload-subtitle">
+            Carga un PDF digital para extraer su geometría documental, inspeccionar tipografía e imágenes y simular el flujo de traducción desacoplado.
+          </p>
+        </div>
+
+        <div class="dropzone" id="dropzone" role="region" aria-label="Zona de carga de archivo PDF" tabindex="0">
+          <svg class="dropzone-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="12" y1="18" x2="12" y2="12"></line>
+            <line x1="9" y1="15" x2="15" y2="15"></line>
+          </svg>
+          <div class="dropzone-text">
+            <span class="dropzone-prompt">Arrastra un archivo PDF aquí o <label for="pdf-file-input" class="file-browse-link">selecciónalo desde tu equipo</label></span>
+            <span class="dropzone-hint">Exclusivamente documentos PDF digitales (.pdf)</span>
+          </div>
+          <input type="file" id="pdf-file-input" class="visually-hidden" accept="application/pdf,.pdf" aria-label="Seleccionar archivo PDF">
+        </div>
+
+        <div class="file-summary hidden" id="file-summary">
+          <div class="file-info-group">
+            <span class="file-icon" aria-hidden="true">📄</span>
+            <div class="file-details">
+              <span class="file-name" id="selected-file-name">-</span>
+              <span class="file-size" id="selected-file-size">-</span>
+            </div>
+          </div>
+          <div class="file-actions">
+            <button type="button" class="btn btn-secondary" id="btn-change-file">Cambiar archivo</button>
+            <button type="button" class="btn btn-primary" id="btn-analyze">
+              <span class="btn-spinner hidden" id="analyze-spinner" aria-hidden="true"></span>
+              <span class="btn-label" id="analyze-btn-text">Analizar documento</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- State 2: Workspace View (Visible after PDF is selected & analyzed) -->
+    <div class="workspace-grid hidden" id="workspace-grid">
+      <!-- Panel 1: Document Structure & Real Stats -->
+      <aside class="panel panel-structure" aria-labelledby="structure-heading">
+        <div class="panel-header">
+          <h2 id="structure-heading" class="panel-title">Estructura del documento</h2>
+          <span class="badge badge-mono" id="stat-page-count-badge">0 págs</span>
+        </div>
+        <div class="panel-body">
+          <div class="stats-group">
+            <h3 class="stats-group-title">Métricas de extracción</h3>
+            <dl class="stats-grid">
+              <div class="stat-item">
+                <dt>Páginas</dt>
+                <dd class="stat-val" id="stat-pages">-</dd>
+              </div>
+              <div class="stat-item">
+                <dt>Bloques texto</dt>
+                <dd class="stat-val" id="stat-blocks">-</dd>
+              </div>
+              <div class="stat-item">
+                <dt>Líneas</dt>
+                <dd class="stat-val" id="stat-lines">-</dd>
+              </div>
+              <div class="stat-item">
+                <dt>Spans tipográficos</dt>
+                <dd class="stat-val" id="stat-spans">-</dd>
+              </div>
+              <div class="stat-item">
+                <dt>Imágenes detectadas</dt>
+                <dd class="stat-val" id="stat-images">-</dd>
+              </div>
+              <div class="stat-item">
+                <dt>Fuentes únicas</dt>
+                <dd class="stat-val" id="stat-fonts-count">-</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="stats-group">
+            <h3 class="stats-group-title">Geometría y orientación</h3>
+            <dl class="stats-list">
+              <div class="stat-row">
+                <dt>Dimensiones</dt>
+                <dd class="font-mono" id="stat-dimensions">-</dd>
+              </div>
+              <div class="stat-row">
+                <dt>Rotaciones</dt>
+                <dd class="font-mono" id="stat-rotations">-</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="stats-group">
+            <h3 class="stats-group-title">Inventario de fuentes</h3>
+            <ul class="font-inventory-list" id="font-inventory-list">
+              <li class="empty-list-item">Ninguna fuente analizada</li>
+            </ul>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Panel 2: PDF Preview (Center / Prominent) -->
+      <section class="panel panel-preview" aria-labelledby="preview-heading">
+        <div class="panel-header">
+          <div class="preview-title-group">
+            <h2 id="preview-heading" class="panel-title">PDF Original</h2>
+            <span class="preview-filename font-mono" id="preview-filename-badge">-</span>
+          </div>
+          <div class="preview-actions">
+            <a href="#" id="preview-external-link" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">
+              Abrir pestaña ↗
+            </a>
+          </div>
+        </div>
+        <div class="panel-body preview-body" id="preview-container">
+          <object id="pdf-object" class="pdf-viewer" type="application/pdf" data="">
+            <div class="pdf-fallback" id="pdf-fallback">
+              <p>El navegador no soporta la previsualización directa de PDFs.</p>
+              <a href="#" id="pdf-fallback-link" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">
+                Abrir PDF original
+              </a>
+            </div>
+          </object>
+        </div>
+      </section>
+
+      <!-- Panel 3: Translation Controls & Pipeline Stepper -->
+      <aside class="panel panel-translation" aria-labelledby="translation-heading">
+        <div class="panel-header">
+          <h2 id="translation-heading" class="panel-title">Pipeline de Traducción</h2>
+          <span class="badge badge-warning" id="engine-mode-badge">MockTranslator</span>
+        </div>
+        <div class="panel-body">
+          <!-- Roadmap Stepper -->
+          <div class="stepper-card">
+            <h3 class="stepper-title">Estado del pipeline Tradux</h3>
+            <ol class="stepper-list" aria-label="Progreso de fases">
+              <li class="stepper-item step-completed" id="step-1">
+                <span class="step-indicator" aria-hidden="true">✓</span>
+                <div class="step-content">
+                  <span class="step-name">1. Análisis documental</span>
+                  <span class="step-status">DocumentModel extraído</span>
+                </div>
+              </li>
+              <li class="stepper-item step-active" id="step-2">
+                <span class="step-indicator" aria-hidden="true">2</span>
+                <div class="step-content">
+                  <span class="step-name">2. Traducción por bloques</span>
+                  <span class="step-status" id="step-2-status">Listo para vista previa</span>
+                </div>
+              </li>
+              <li class="stepper-item step-pending" id="step-3">
+                <span class="step-indicator" aria-hidden="true">3</span>
+                <div class="step-content">
+                  <span class="step-name">3. Layout & Reconstrucción</span>
+                  <span class="step-status">Próxima fase (Fase 3)</span>
+                </div>
+              </li>
+              <li class="stepper-item step-pending" id="step-4">
+                <span class="step-indicator" aria-hidden="true">4</span>
+                <div class="step-content">
+                  <span class="step-name">4. Validación QA</span>
+                  <span class="step-status">Pendiente (Fase 5)</span>
+                </div>
+              </li>
+            </ol>
+            <p class="stepper-notice">
+              <strong>Aviso de fase:</strong> La generación y descarga del nuevo archivo PDF traducido estará disponible en la Fase 3. Esta vista utiliza <code>MockTranslator</code> local para validar la preservación de estructura e integridad sin costo ni llamadas de red.
+            </p>
+          </div>
+
+          <!-- Translation Settings Form -->
+          <form class="translation-form" id="translation-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="select-source-lang" class="form-label">Idioma origen</label>
+                <select id="select-source-lang" class="form-select">
+                  <option value="">Auto (detectar)</option>
+                  <option value="nl">nl (Neerlandés)</option>
+                  <option value="en">en (Inglés)</option>
+                  <option value="de">de (Alemán)</option>
+                  <option value="fr">fr (Francés)</option>
+                  <option value="es">es (Español)</option>
+                  <option value="pt">pt (Portugués)</option>
+                  <option value="it">it (Italiano)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-target-lang" class="form-label">Idioma destino</label>
+                <select id="select-target-lang" class="form-select">
+                  <option value="es" selected>es (Español)</option>
+                  <option value="en">en (Inglés)</option>
+                  <option value="nl">nl (Neerlandés)</option>
+                  <option value="de">de (Alemán)</option>
+                  <option value="fr">fr (Francés)</option>
+                  <option value="pt">pt (Portugués)</option>
+                  <option value="it">it (Italiano)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="input-protected-term" class="form-label">Términos protegidos</label>
+              <div class="input-chip-group">
+                <input type="text" id="input-protected-term" class="form-input" placeholder="Ej. Tradux, MODEL-X100 (Enter para añadir)">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-add-chip">Añadir</button>
+              </div>
+              <div class="chips-container" id="chips-container" aria-label="Lista de términos protegidos">
+                <!-- Chips added dynamically -->
+              </div>
+              <span class="form-hint">Términos literales que no deben traducirse bajo ninguna circunstancia.</span>
+            </div>
+
+            <div class="demo-notice-banner" role="note" aria-label="Aviso de modo de demostración">
+              <div class="demo-notice-header">
+                <strong class="demo-notice-tag">Modo de demostración</strong>
+                <span class="badge badge-mono">MockTranslator</span>
+              </div>
+              <p class="demo-notice-text">
+                La vista previa valida el pipeline y conserva la estructura.<br>
+                <strong>No realiza traducción lingüística real.</strong>
+              </p>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" class="btn btn-primary btn-full" id="btn-translate">
+                <span class="btn-spinner hidden" id="translate-spinner" aria-hidden="true"></span>
+                <span class="btn-label" id="translate-btn-text">Generar vista previa</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </aside>
+
+      <!-- Bottom Panel: Comparative Block View (Source ↔ Translation) -->
+      <section class="panel panel-blocks" id="panel-blocks" aria-labelledby="blocks-heading">
+        <div class="panel-header">
+          <div class="blocks-title-group">
+            <h2 id="blocks-heading" class="panel-title">Inspección de Bloques: Fuente ↔ Traducción</h2>
+            <span class="badge badge-subtle" id="blocks-count-badge">0 bloques</span>
+          </div>
+          <div class="blocks-filter-group">
+            <label for="filter-page-select" class="visually-hidden">Filtrar por página</label>
+            <select id="filter-page-select" class="form-select form-select-sm">
+              <option value="all">Todas las páginas</option>
+            </select>
+            <div class="pagination-controls" id="pagination-controls">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-prev-page" disabled aria-label="Página anterior">Anterior</button>
+              <span class="pagination-status font-mono" id="pagination-status">1 / 1</span>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-next-page" disabled aria-label="Página siguiente">Siguiente</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-body blocks-body">
+          <div class="blocks-table-container">
+            <table class="blocks-table" aria-label="Comparativa de bloques traducidos">
+              <thead>
+                <tr>
+                  <th scope="col" class="th-meta">Ubicación</th>
+                  <th scope="col" class="th-source">Texto original (Fuente)</th>
+                  <th scope="col" class="th-translation">Vista previa (Mock pipeline)</th>
+                </tr>
+              </thead>
+              <tbody id="blocks-tbody">
+                <tr>
+                  <td colspan="3" class="empty-table-cell">
+                    Analiza un documento para inspeccionar sus bloques de texto.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/workbench.js"></script>
+</body>
+</html>
