@@ -196,6 +196,162 @@ async def test_openai_translator_empty_and_invalid_json() -> None:
         )
 
 
+@pytest.mark.asyncio
+async def test_openai_defensive_root_json_is_list() -> None:
+    """Verify TranslationProviderError when root response JSON is a list."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    settings = Settings(translation_api_key="secret-key-123")
+    translator = OpenAITranslator(settings=settings, client=client)
+
+    with pytest.raises(TranslationProviderError, match="root must be an object") as exc:
+        await translator.translate(
+            TranslationRequest(text="Sensitive source text", target_language="es")
+        )
+    assert "secret-key-123" not in str(exc.value)
+    assert "Sensitive source text" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_openai_defensive_choice_not_dict() -> None:
+    """Verify TranslationProviderError when choices[0] is not a dictionary."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": ["not-a-dict"]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    settings = Settings(translation_api_key="secret-key-123")
+    translator = OpenAITranslator(settings=settings, client=client)
+
+    with pytest.raises(
+        TranslationProviderError, match="'choices\\[0\\]' must be an object"
+    ) as exc:
+        await translator.translate(
+            TranslationRequest(text="Sensitive source text", target_language="es")
+        )
+    assert "secret-key-123" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_openai_defensive_message_not_dict() -> None:
+    """Verify TranslationProviderError when message is not a dictionary."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": "not-a-dict"}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    settings = Settings(translation_api_key="secret-key-123")
+    translator = OpenAITranslator(settings=settings, client=client)
+
+    with pytest.raises(
+        TranslationProviderError, match="'message' must be an object"
+    ) as exc:
+        await translator.translate(
+            TranslationRequest(text="Sensitive source text", target_language="es")
+        )
+    assert "secret-key-123" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_openai_defensive_content_not_str() -> None:
+    """Verify TranslationProviderError when content is not a string."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": 12345}}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    settings = Settings(translation_api_key="secret-key-123")
+    translator = OpenAITranslator(settings=settings, client=client)
+
+    with pytest.raises(
+        TranslationProviderError, match="'content' must be a non-empty string"
+    ) as exc:
+        await translator.translate(
+            TranslationRequest(text="Sensitive source text", target_language="es")
+        )
+    assert "secret-key-123" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_openai_defensive_autodetect_missing_detected_language() -> None:
+    """Verify TranslationProviderError when auto-detect lacks
+    detected_source_language.
+    """
+    content = json.dumps({"translated_text": "Texto"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": content}}]}
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    settings = Settings(translation_api_key="secret-key-123")
+    translator = OpenAITranslator(settings=settings, client=client)
+
+    with pytest.raises(
+        TranslationProviderError, match="do not match expected contract"
+    ) as exc:
+        await translator.translate(
+            TranslationRequest(
+                text="Sensitive source text", source_language=None, target_language="es"
+            )
+        )
+    assert "secret-key-123" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_openai_defensive_autodetect_numeric_translated_text() -> None:
+    """Verify TranslationProviderError when translated_text is numeric."""
+    content = json.dumps({"detected_source_language": "en", "translated_text": 12345})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": content}}]}
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    settings = Settings(translation_api_key="secret-key-123")
+    translator = OpenAITranslator(settings=settings, client=client)
+
+    with pytest.raises(
+        TranslationProviderError, match="'translated_text' string"
+    ) as exc:
+        await translator.translate(
+            TranslationRequest(
+                text="Sensitive source text", source_language=None, target_language="es"
+            )
+        )
+    assert "secret-key-123" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_openai_defensive_autodetect_empty_detected_language() -> None:
+    """Verify TranslationProviderError when detected_source_language is empty."""
+    content = json.dumps({"detected_source_language": "  ", "translated_text": "Texto"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": content}}]}
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    settings = Settings(translation_api_key="secret-key-123")
+    translator = OpenAITranslator(settings=settings, client=client)
+
+    with pytest.raises(
+        TranslationProviderError, match="'detected_source_language' string"
+    ) as exc:
+        await translator.translate(
+            TranslationRequest(
+                text="Sensitive source text", source_language=None, target_language="es"
+            )
+        )
+    assert "secret-key-123" not in str(exc.value)
+
+
 def test_factory_selection() -> None:
     """Verify factory returns appropriate provider according to configuration."""
     # Mock works without API key

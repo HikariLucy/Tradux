@@ -144,47 +144,98 @@ class OpenAITranslator:
                 f"Failed to parse JSON response: {type(e).__name__}"
             ) from None
 
-        choices = data.get("choices")
-        if not choices or not isinstance(choices, list) or len(choices) == 0:
-            raise TranslationProviderError(
-                "Empty choices returned by translation provider"
-            )
-
-        raw_content = choices[0].get("message", {}).get("content", "")
-        if not raw_content or not raw_content.strip():
-            raise TranslationProviderError(
-                "Empty translation content returned by provider"
-            )
-
-        detected_language = request.source_language
-        translated_text = raw_content.strip()
-
-        if auto_detect:
-            try:
-                parsed_json = json.loads(translated_text)
-                detected_language = parsed_json.get("detected_source_language")
-                translated_text = str(parsed_json.get("translated_text", ""))
-            except Exception as e:
+        try:
+            if not isinstance(data, dict):
                 raise TranslationProviderError(
-                    f"Failed to parse structured translation JSON: {type(e).__name__}"
-                ) from None
-
-            if not translated_text:
-                raise TranslationProviderError(
-                    "Structured response did not contain valid 'translated_text'"
+                    "Invalid response structure: root must be an object"
                 )
 
-        usage = data.get("usage", {})
-        metrics = {
-            "prompt_tokens": usage.get("prompt_tokens"),
-            "completion_tokens": usage.get("completion_tokens"),
-            "total_tokens": usage.get("total_tokens"),
-        }
+            choices = data.get("choices")
+            if not isinstance(choices, list) or len(choices) == 0:
+                raise TranslationProviderError(
+                    "Empty choices returned by translation provider"
+                )
 
-        return TranslationResult(
-            translated_text=translated_text,
-            detected_source_language=detected_language,
-            provider="openai",
-            model=self.model,
-            metrics={k: v for k, v in metrics.items() if v is not None},
-        )
+            first_choice = choices[0]
+            if not isinstance(first_choice, dict):
+                raise TranslationProviderError(
+                    "Invalid response structure: 'choices[0]' must be an object"
+                )
+
+            message = first_choice.get("message")
+            if not isinstance(message, dict):
+                raise TranslationProviderError(
+                    "Invalid response structure: 'message' must be an object"
+                )
+
+            raw_content = message.get("content")
+            if not isinstance(raw_content, str) or not raw_content.strip():
+                raise TranslationProviderError(
+                    "Invalid response structure: 'content' must be a non-empty string"
+                )
+
+            detected_language = request.source_language
+            translated_text = raw_content.strip()
+
+            if auto_detect:
+                try:
+                    parsed_json = json.loads(translated_text)
+                except Exception as e:
+                    raise TranslationProviderError(
+                        "Failed to parse structured translation JSON: "
+                        f"{type(e).__name__}"
+                    ) from None
+
+                if not isinstance(parsed_json, dict):
+                    raise TranslationProviderError(
+                        "Structured translation response must be a JSON object"
+                    )
+
+                expected_keys = {"detected_source_language", "translated_text"}
+                if set(parsed_json.keys()) != expected_keys:
+                    raise TranslationProviderError(
+                        "Structured response keys do not match expected contract"
+                    )
+
+                detected_lang_val = parsed_json.get("detected_source_language")
+                if (
+                    not isinstance(detected_lang_val, str)
+                    or not detected_lang_val.strip()
+                ):
+                    raise TranslationProviderError(
+                        "Structured response must contain a non-empty "
+                        "'detected_source_language' string"
+                    )
+
+                translated_val = parsed_json.get("translated_text")
+                if not isinstance(translated_val, str) or not translated_val.strip():
+                    raise TranslationProviderError(
+                        "Structured response must contain a non-empty "
+                        "'translated_text' string"
+                    )
+
+                detected_language = detected_lang_val.strip()
+                translated_text = translated_val.strip()
+
+            usage = data.get("usage")
+            metrics = {}
+            if isinstance(usage, dict):
+                metrics = {
+                    "prompt_tokens": usage.get("prompt_tokens"),
+                    "completion_tokens": usage.get("completion_tokens"),
+                    "total_tokens": usage.get("total_tokens"),
+                }
+
+            return TranslationResult(
+                translated_text=translated_text,
+                detected_source_language=detected_language,
+                provider="openai",
+                model=self.model,
+                metrics={k: v for k, v in metrics.items() if v is not None},
+            )
+        except TranslationProviderError:
+            raise
+        except Exception as e:
+            raise TranslationProviderError(
+                f"Unexpected error parsing provider response: {type(e).__name__}"
+            ) from None
