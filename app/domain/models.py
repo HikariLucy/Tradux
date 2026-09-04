@@ -1,6 +1,6 @@
 """Domain models representing structured documents independent of any PDF engine."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -8,9 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class BoundingBox(BaseModel):
     """Bounding box geometry in PDF points using (x0, y0, x1, y1) convention.
 
-    Coordinates follow standard PDF page coordinate space:
-    - x0, y0: top-left corner
-    - x1, y1: bottom-right corner
+    Coordinates follow Tradux's canonical unrotated coordinate space (based on
+    PyMuPDF unrotated page coordinates):
+    - x0, y0: top-left corner in unrotated page space
+    - x1, y1: bottom-right corner in unrotated page space
     Validation ensures x1 >= x0 and y1 >= y0.
     """
 
@@ -148,7 +149,7 @@ class Page(BaseModel):
         ...,
         description="Unrotated page height in PDF points (matches bbox space)",
     )
-    rotation: int = Field(
+    rotation: Literal[0, 90, 180, 270] = Field(
         default=0,
         description="Page rotation angle in degrees (0, 90, 180, 270)",
     )

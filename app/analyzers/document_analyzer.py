@@ -24,12 +24,12 @@ from app.domain.models import (
 
 
 def make_bounding_box(x0: float, y0: float, x1: float, y1: float) -> BoundingBox:
-    """Create a validated BoundingBox ensuring x1 >= x0 and y1 >= y0."""
+    """Create a BoundingBox preserving verbatim coordinates from source."""
     return BoundingBox(
-        x0=min(float(x0), float(x1)),
-        y0=min(float(y0), float(y1)),
-        x1=max(float(x0), float(x1)),
-        y1=max(float(y0), float(y1)),
+        x0=float(x0),
+        y0=float(y0),
+        x1=float(x1),
+        y1=float(y1),
     )
 
 

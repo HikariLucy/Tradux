@@ -38,6 +38,31 @@ def test_bounding_box_invalid_y() -> None:
         BoundingBox(x0=10.0, y0=200.0, x1=50.0, y1=100.0)
 
 
+def test_make_bounding_box_does_not_normalize_silently() -> None:
+    """Verify make_bounding_box preserves order and fails on inverted coords."""
+    from app.analyzers.document_analyzer import make_bounding_box
+
+    # Must raise ValidationError instead of silently swapping coordinates
+    with pytest.raises(ValidationError, match="Invalid bounding box: x1"):
+        make_bounding_box(x0=100.0, y0=20.0, x1=50.0, y1=120.0)
+
+    with pytest.raises(ValidationError, match="Invalid bounding box: y1"):
+        make_bounding_box(x0=10.0, y0=200.0, x1=50.0, y1=100.0)
+
+
+def test_page_rotation_validation() -> None:
+    """Verify Page.rotation only accepts 0, 90, 180, 270 and rejects invalid angles."""
+    # Valid rotation values
+    for valid_rot in (0, 90, 180, 270):
+        page = Page(page_number=1, width=595.0, height=842.0, rotation=valid_rot)
+        assert page.rotation == valid_rot
+
+    # Invalid rotation angles (e.g. 37, 45, 360) must be rejected by Pydantic
+    for invalid_rot in (37, 45, 360, -90):
+        with pytest.raises(ValidationError, match="Input should be 0, 90, 180 or 270"):
+            Page(page_number=1, width=595.0, height=842.0, rotation=invalid_rot)
+
+
 def test_document_page_count_sync() -> None:
     """Verify Document page_count is automatically synchronized with len(pages)."""
     p1 = Page(page_number=1, width=595.0, height=842.0)
