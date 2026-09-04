@@ -71,12 +71,14 @@ Consultar [`docs/roadmap.md`](docs/roadmap.md).
 - **Fase 0 — Definición e inicialización (Completada).**
 - **Fase 1 — Análisis de PDF (Completada):** motor de análisis documental (`DocumentAnalyzer`), modelos de dominio desacoplados (`Document`, `Page`, `TextBlock`, `TextLine`, `TextSpan`, `ImageElement`, `BoundingBox`), endpoint HTTP `POST /api/v1/documents/analyze` y serialización canónica JSON.
 - **Fase 2 — Traducción desacoplada (Completada):** interfaz abstracta `Translator`, servicio `TranslationEngine`, protección estricta de tokens/términos (`protection.py`), proveedor `MockTranslator` determinista y adaptador real HTTP OpenAI-compatible con `httpx`.
-- **Fase 2.5 — Tradux Web Workbench (Completada):** interfaz web desktop-first ligera y editorial (`GET /`) servida con FastAPI + Jinja2 + CSS propio + vanilla JS; previsualización local del PDF en navegador, extracción y análisis documental mediante el endpoint real `POST /api/v1/documents/analyze`, métricas estructurales del `DocumentModel`, controles de idiomas y términos protegidos, vista de demostración del pipeline mediante `POST /api/v1/workbench/translate` (forzando `MockTranslator` offline y sin coste), comparativa de bloques fuente ↔ traducción e indicador de roadmap documental (aclarando que la generación del PDF traducido llegará en la Fase 3).
+- **Fase 2.5 — Tradux Web Workbench (Completada):** interfaz web desktop-first ligera y editorial (`GET /`) servida con FastAPI + Jinja2 + CSS propio + vanilla JS; previsualización local del PDF en navegador, extracción y análisis documental mediante el endpoint real `POST /api/v1/documents/analyze`, métricas estructurales del `DocumentModel`, controles de idiomas y términos protegidos, vista de demostración del pipeline mediante `POST /api/v1/workbench/translate` (forzando `MockTranslator` offline y sin coste), comparativa de bloques fuente ↔ traducción.
+- **Fase 3 — Motor de layout y reconstrucción de PDF (Completada):** motor de decisiones geométricas y reflow (`LayoutEngine`), medición ultrarrápida no destructiva (`TextMeasurer`), resolución determinista de tipografías a Base-14 (`app.layout.fonts`), selección de estilo representativo por ponderación de caracteres, renderizador PyMuPDF de alta fidelidad (`PyMuPDFRenderer`), preservación de vectores de fondo, imágenes y rotación de página, política de seguridad ante desbordamiento (`REVIEW_REQUIRED` sin mutilar texto original), script CLI `scripts/render_translated_document.py` y descarga de demostración interactiva en Web Workbench (`POST /api/v1/workbench/render`).
 
 Decisiones arquitectónicas:
 - [`docs/decisions/0001-initial-stack.md`](docs/decisions/0001-initial-stack.md)
 - [`docs/decisions/0002-document-model-and-analyzer.md`](docs/decisions/0002-document-model-and-analyzer.md)
 - [`docs/decisions/0003-translation-engine-and-provider-abstraction.md`](docs/decisions/0003-translation-engine-and-provider-abstraction.md)
+- [`docs/decisions/0004-layout-engine-and-pdf-reconstruction.md`](docs/decisions/0004-layout-engine-and-pdf-reconstruction.md)
 
 ## Guía de ejecución (Windows / PowerShell)
 
@@ -160,11 +162,12 @@ Flujo de trabajo en la interfaz:
 1. **Seleccionar documento:** arrastra o selecciona un archivo PDF digital. El navegador lo previsualizará de inmediato mediante un Object URL local, sin subirlo innecesariamente.
 2. **Analizar documento:** pulsa el botón *Analizar documento* para invocar el endpoint real `POST /api/v1/documents/analyze`. La interfaz mostrará métricas estructurales (páginas, bloques, líneas, spans, imágenes, fuentes únicas y dimensiones).
 3. **Configurar traducción:** selecciona idioma de origen (o detección automática), idioma de destino y añade términos protegidos como etiquetas interactivas.
-4. **Vista de traducción:** pulsa *Ejecutar vista de traducción* para procesar los bloques a través del endpoint de desarrollo `POST /api/v1/workbench/translate`.
-   > **Importante:** La vista visual de traducción utiliza de forma estricta y forzada `MockTranslator` para garantizar determinismo, cero consumo de tokens y cero llamadas de red externas. En esta fase aún **NO** se genera ni descarga el archivo PDF traducido; esa capacidad corresponde a la **Fase 3 (LayoutEngine & Reconstrucción)**.
-5. **Inspección de bloques:** revisa la tabla inferior comparativa entre texto fuente y texto traducido, con paginación y filtro por página.
+4. **Vista de traducción:** pulsa *Generar vista previa* para procesar los bloques a través del endpoint de desarrollo `POST /api/v1/workbench/translate`.
+   > **Aviso:** La vista previa utiliza estrictamente `MockTranslator` para garantizar determinismo, cero consumo de tokens y cero llamadas de red externas.
+5. **Reconstruir y descargar PDF:** tras generar la vista previa, se activa la sección *3. Layout & Reconstrucción* con el desglose de bloques ajustados (`fit`), reducidos (`shrunk`) y pendientes de revisión (`review`). Pulsa *Descargar PDF de demostración* para reconstruir el PDF en memoria con `PyMuPDFRenderer` y descargarlo directamente (`_tradux.pdf`).
+6. **Inspección de bloques:** revisa la tabla inferior comparativa entre texto fuente y texto traducido, con paginación y filtro por página.
 
-### 7. Analizar y traducir por API / CLI
+### 7. Analizar, traducir y reconstruir por API / CLI
 
 #### Vía endpoint HTTP (`POST /api/v1/documents/analyze`)
 
@@ -199,6 +202,13 @@ python scripts/translate_document.py output/analisis.json --target es --provider
 
 # O usando el adaptador HTTP real (requiere TRANSLATION_API_KEY en entorno):
 python scripts/translate_document.py output/analisis.json --target es --provider openai --output output/traducido.json
+```
+
+Para reconstruir el PDF traducido aplicando el motor de layout y PyMuPDF:
+
+```powershell
+# Reconstruir PDF traducido y opcionalmente guardar informe de layout:
+python scripts/render_translated_document.py ruta/a/original.pdf output/traducido.json --output output/reconstruido.pdf [--layout-report output/layout_report.json]
 ```
 
 #### Ejemplo resumido del JSON producido

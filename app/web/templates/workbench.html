@@ -191,7 +191,7 @@
                 <span class="step-indicator" aria-hidden="true">3</span>
                 <div class="step-content">
                   <span class="step-name">3. Layout & Reconstrucción</span>
-                  <span class="step-status">Próxima fase (Fase 3)</span>
+                  <span class="step-status" id="step-3-status">Disponible tras vista previa</span>
                 </div>
               </li>
               <li class="stepper-item step-pending" id="step-4">
@@ -203,7 +203,7 @@
               </li>
             </ol>
             <p class="stepper-notice">
-              <strong>Aviso de fase:</strong> La generación y descarga del nuevo archivo PDF traducido estará disponible en la Fase 3. Esta vista utiliza <code>MockTranslator</code> local para validar la preservación de estructura e integridad sin costo ni llamadas de red.
+              <strong>Fase 3 activa:</strong> Puedes descargar un PDF reconstruido de demostración tras generar la vista previa. Esta reconstrucción valida la preservación de fondos, imágenes y rotación con sustitución local de texto.
             </p>
           </div>
 
@@ -266,6 +266,19 @@
                 <span class="btn-spinner hidden" id="translate-spinner" aria-hidden="true"></span>
                 <span class="btn-label" id="translate-btn-text">Generar vista previa</span>
               </button>
+            </div>
+
+            <div class="render-actions hidden" id="render-actions">
+              <div class="layout-summary-stats" id="layout-summary-stats">
+                <span class="badge badge-subtle" id="stat-fit-badge">0 fit</span>
+                <span class="badge badge-subtle" id="stat-shrunk-badge">0 shrunk</span>
+                <span class="badge badge-subtle" id="stat-review-badge">0 review</span>
+              </div>
+              <button type="button" class="btn btn-secondary btn-full" id="btn-download-pdf">
+                <span class="btn-spinner hidden" id="render-spinner" aria-hidden="true"></span>
+                <span class="btn-label" id="render-btn-text">Descargar PDF de demostración 📥</span>
+              </button>
+              <span class="form-hint text-center">PDF reconstruido localmente con PyMuPDFRenderer.</span>
             </div>
           </form>
         </div>
