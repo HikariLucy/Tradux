@@ -104,8 +104,11 @@ async def workbench_translate(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Translation error: {type(e).__name__}",
         ) from None
-    except Exception:
-        logger.exception("Unexpected error during workbench translation")
+    except Exception as e:
+        logger.error(
+            "Unexpected error during workbench translation: %s (stage=translation)",
+            type(e).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unexpected error during workbench translation",
@@ -214,17 +217,25 @@ async def workbench_render(
     try:
         json_str = raw_json.decode("utf-8")
     except UnicodeDecodeError as e:
+        logger.warning(
+            "Document JSON decoding failed: %s (stage=document_validation)",
+            type(e).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Document JSON file is not valid UTF-8: {e}",
+            detail="Document JSON file is not valid UTF-8",
         ) from None
 
     try:
         document_model = Document.model_validate_json(json_str)
     except Exception as e:
+        logger.warning(
+            "Document model validation failed: %s (stage=document_validation)",
+            type(e).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid Document model JSON payload: {e}",
+            detail="Invalid Document model JSON payload",
         ) from None
 
     # 4. Read Source PDF in bounded chunks
@@ -253,6 +264,17 @@ async def workbench_render(
     try:
         engine = LayoutEngine()
         layout = engine.build(document_model)
+    except Exception as e:
+        logger.error(
+            "Workbench layout calculation failed: %s (stage=layout)",
+            type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error rendering PDF",
+        ) from None
+
+    try:
         renderer = PyMuPDFRenderer()
         result = renderer.render(
             source_pdf=pdf_bytes,
@@ -260,10 +282,13 @@ async def workbench_render(
             layout=layout,
         )
     except Exception as e:
-        logger.exception("Error rendering PDF in workbench")
+        logger.error(
+            "Workbench PDF rendering failed: %s (stage=render)",
+            type(e).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error rendering PDF: {e}",
+            detail="Error rendering PDF",
         ) from None
 
     safe_name = Path(pdf_upload.filename or "document").stem

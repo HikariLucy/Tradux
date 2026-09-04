@@ -494,3 +494,80 @@ def test_workbench_render_json_exceeds_max_limit_413() -> None:
             },
         )
     assert response.status_code == 413
+
+
+def test_workbench_render_validation_error_does_not_leak_document_content(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify that validation errors on invalid Document model JSON return 422
+    and do not leak sensitive document content in response or logs.
+    """
+    import json
+    import logging
+
+    from tests.fixtures import create_sample_pdf_bytes
+
+    client = TestClient(app)
+    pdf_bytes = create_sample_pdf_bytes()
+    secret_marker = "TRADUX_PRIVATE_DOCUMENT_CONTENT_91827"
+
+    # Construct invalid Document JSON where a field has invalid type containing secret
+    invalid_doc_payload = {
+        "filename": "sample.pdf",
+        # int expected; causes ValidationError with input_value
+        "page_count": secret_marker,
+        "pages": [],
+    }
+    raw_json = json.dumps(invalid_doc_payload).encode("utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        response = client.post(
+            "/api/v1/workbench/render",
+            files={
+                "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+                "document": ("document.json", raw_json, "application/json"),
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Invalid Document model JSON payload"
+    assert secret_marker not in response.text
+    assert secret_marker not in caplog.text
+
+
+def test_workbench_render_internal_error_does_not_leak_document_content(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that unexpected rendering errors return 500 and do not leak
+    sensitive document content in response or logs.
+    """
+    import logging
+
+    from tests.fixtures import create_sample_pdf_bytes
+
+    client = TestClient(app)
+    doc = _create_sample_document()
+    pdf_bytes = create_sample_pdf_bytes()
+    secret_marker = "TRADUX_PRIVATE_DOCUMENT_CONTENT_91827"
+
+    def mock_render(*args: object, **kwargs: object) -> None:
+        raise RuntimeError(f"Rendering failed with sensitive info: {secret_marker}")
+
+    monkeypatch.setattr("app.api.v1.workbench.PyMuPDFRenderer.render", mock_render)
+
+    doc_json = doc.model_dump_json().encode("utf-8")
+
+    with caplog.at_level(logging.ERROR):
+        response = client.post(
+            "/api/v1/workbench/render",
+            files={
+                "file": ("sample.pdf", pdf_bytes, "application/pdf"),
+                "document": ("document.json", doc_json, "application/json"),
+            },
+        )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Error rendering PDF"
+    assert secret_marker not in response.text
+    assert secret_marker not in caplog.text
