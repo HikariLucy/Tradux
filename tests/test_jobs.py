@@ -445,6 +445,28 @@ def test_upload_validation_errors() -> None:
     )
     assert res_no_target.status_code == 422
 
+    # Unsupported target language
+    res_bad_target = client.post(
+        "/api/v1/jobs",
+        data={"target_language": "banana", "mode": "demo"},
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert res_bad_target.status_code == 422
+    assert "Unsupported target language" in res_bad_target.json()["detail"]
+
+    # Unsupported source language
+    res_bad_source = client.post(
+        "/api/v1/jobs",
+        data={
+            "target_language": "es",
+            "source_language": "banana",
+            "mode": "demo",
+        },
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert res_bad_source.status_code == 422
+    assert "Unsupported source language" in res_bad_source.json()["detail"]
+
     # Invalid mode
     res_bad_mode = client.post(
         "/api/v1/jobs",
@@ -452,6 +474,43 @@ def test_upload_validation_errors() -> None:
         files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
     )
     assert res_bad_mode.status_code == 422
+
+
+# 13b. Language normalization and auto detection
+def test_language_normalization_and_validation() -> None:
+    """Uppercase language codes like ES and EN normalize cleanly to es and en."""
+    client = TestClient(app)
+    pdf_bytes = create_sample_pdf_bytes()
+
+    res = client.post(
+        "/api/v1/jobs",
+        data={
+            "target_language": "  ES  ",
+            "source_language": "  EN  ",
+            "mode": "demo",
+        },
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert res.status_code == 202
+    job_id = res.json()["job_id"]
+    job_data = client.get(f"/api/v1/jobs/{job_id}").json()
+    assert job_data["target_language"] == "es"
+    assert job_data["source_language"] == "en"
+
+    # source_language="auto" normalizes to None
+    res_auto = client.post(
+        "/api/v1/jobs",
+        data={
+            "target_language": "nl",
+            "source_language": "auto",
+            "mode": "demo",
+        },
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert res_auto.status_code == 202
+    auto_job_id = res_auto.json()["job_id"]
+    auto_job = client.get(f"/api/v1/jobs/{auto_job_id}").json()
+    assert auto_job["source_language"] is None
 
 
 # 14. Download filename sanitized
@@ -834,16 +893,65 @@ def test_active_jobs_not_purged_by_ttl_or_capacity() -> None:
 
 # 28. Event loop is not blocked during background job execution
 @pytest.mark.asyncio
-async def test_event_loop_not_blocked_during_job_processing() -> None:
+async def test_event_loop_not_blocked_during_job_processing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """FastAPI event loop remains responsive (e.g. GET /health) while job runs."""
+    import asyncio
+    import time
+
     import httpx
 
+    from app.jobs.models import Job, JobMode, JobStatus
+    from app.jobs.service import get_job_service
+    from app.layout.engine import LayoutEngine
     from app.main import app as fastapi_app
+
+    service = get_job_service()
+    pdf_bytes = create_sample_pdf_bytes()
+    job = Job(
+        filename="async_concurrency_test.pdf",
+        file_size=len(pdf_bytes),
+        page_count=2,
+        target_language="es",
+        mode=JobMode.DEMO,
+        provider="mock",
+    )
+    service.store.add(job, pdf_bytes)
+
+    original_build = LayoutEngine.build
+
+    def slow_build(self, doc):
+        time.sleep(0.2)
+        return original_build(self, doc)
+
+    monkeypatch.setattr(LayoutEngine, "build", slow_build)
+
+    job_task = asyncio.create_task(service.run_job(job.job_id))
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=fastapi_app), base_url="http://test"
     ) as client:
-        # Check health response while loop is active
+        # Give run_job a brief tick to start running
+        await asyncio.sleep(0.02)
+
+        # Health endpoint responds while background stage is sleeping in thread
         res = await client.get("/health")
         assert res.status_code == 200
         assert res.json()["status"] == "ok"
+
+        # Active job status endpoint also responds concurrently
+        status_res = await client.get(f"/api/v1/jobs/{job.job_id}")
+        assert status_res.status_code == 200
+        assert status_res.json()["status"] in (
+            JobStatus.ANALYZING.value,
+            JobStatus.TRANSLATING.value,
+            JobStatus.LAYOUT.value,
+            JobStatus.RENDERING.value,
+            JobStatus.COMPLETED.value,
+        )
+
+    await job_task
+    final_job = service.store.get(job.job_id)
+    assert final_job is not None
+    assert final_job.status == JobStatus.COMPLETED

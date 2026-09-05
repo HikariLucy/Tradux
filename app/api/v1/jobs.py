@@ -19,6 +19,7 @@ from fastapi import (
 
 from app.core.config import get_settings
 from app.jobs.models import (
+    SUPPORTED_LANGUAGES,
     JobCreateResponse,
     JobMode,
     JobResponse,
@@ -114,11 +115,27 @@ async def create_job(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Target language is required and cannot be empty",
         )
+    if clean_target not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Unsupported target language '{target_language}'. "
+                f"Supported languages: {', '.join(sorted(SUPPORTED_LANGUAGES))}"
+            ),
+        )
 
     # 2. Validate source language
     clean_source = (source_language or "").strip().lower()
     if clean_source in ("", "auto", "none"):
         clean_source = None
+    elif clean_source not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Unsupported source language '{source_language}'. "
+                f"Supported languages: {', '.join(sorted(SUPPORTED_LANGUAGES))}"
+            ),
+        )
 
     # 3. Validate mode
     clean_mode = (mode or "").strip().lower()

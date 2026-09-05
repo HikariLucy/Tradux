@@ -1,6 +1,7 @@
 """Translation jobs package for Phase 4 MVP."""
 
 from app.jobs.models import (
+    SUPPORTED_LANGUAGES,
     Job,
     JobCreateResponse,
     JobLayoutStats,
@@ -16,6 +17,7 @@ from app.jobs.service import (
 from app.jobs.store import JobStore, get_job_store
 
 __all__ = [
+    "SUPPORTED_LANGUAGES",
     "Job",
     "JobCreateResponse",
     "JobLayoutStats",

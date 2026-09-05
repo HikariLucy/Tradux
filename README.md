@@ -186,14 +186,28 @@ Invoke-RestMethod -Uri "http://localhost:8000/api/v1/capabilities"
 **Crear un trabajo de traducción (`POST /api/v1/jobs`):**
 
 ```powershell
-$form = @{
+# Modo demostración (seguro, determinista y offline con MockTranslator):
+$formDemo = @{
     file = Get-Item -Path "ruta\al\documento.pdf"
     target_language = "es"
     source_language = "en"
-    mode = "demo" # O "configured" si el servidor tiene credenciales activas
+    mode = "demo"
     protected_terms = "Tradux,PyMuPDF"
 }
-$job = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/jobs" -Method Post -Form $form
+$job = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/jobs" -Method Post -Form $formDemo
+$jobId = $job.job_id
+
+# O modo configurado (proveedor real del servidor, ej. OpenAI):
+# Requiere obligatoriamente confirm_configured = "true" tras confirmación explícita del usuario
+$formConfigured = @{
+    file = Get-Item -Path "ruta\al\documento.pdf"
+    target_language = "es"
+    source_language = "en"
+    mode = "configured"
+    confirm_configured = "true" # Si es false o se omite, la API responde 409 Conflict para evitar consumo accidental
+    protected_terms = "Tradux,PyMuPDF"
+}
+$job = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/jobs" -Method Post -Form $formConfigured
 $jobId = $job.job_id
 ```
 

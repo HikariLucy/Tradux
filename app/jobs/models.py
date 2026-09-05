@@ -31,6 +31,11 @@ class JobMode(StrEnum):
     CONFIGURED = "configured"
 
 
+SUPPORTED_LANGUAGES: frozenset[str] = frozenset(
+    {"nl", "en", "de", "fr", "es", "pt", "it"}
+)
+
+
 class JobLayoutStats(BaseModel):
     """Layout engine metrics for the job result."""
 
