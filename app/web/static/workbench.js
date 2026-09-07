@@ -20,6 +20,9 @@
     filteredBlocks: [],
     isAnalyzing: false,
     isTranslating: false,
+    capabilities: null,
+    currentJobId: null,
+    jobPollTimer: null,
   };
 
   // DOM Elements
@@ -77,6 +80,51 @@
     btnTranslate: document.getElementById("btn-translate"),
     translateSpinner: document.getElementById("translate-spinner"),
     translateBtnText: document.getElementById("translate-btn-text"),
+
+    // Phase 4 MVP Job & Mode Controls
+    radioModeDemo: document.getElementById("radio-mode-demo"),
+    radioModeConfigured: document.getElementById("radio-mode-configured"),
+    modeOptionDemo: document.getElementById("mode-option-demo"),
+    modeOptionConfigured: document.getElementById("mode-option-configured"),
+    configuredProviderBadge: document.getElementById("configured-provider-badge"),
+    configuredProviderDesc: document.getElementById("configured-provider-desc"),
+    demoNoticeBanner: document.getElementById("demo-notice-banner"),
+    costNoticeBanner: document.getElementById("cost-notice-banner"),
+    costProviderBadge: document.getElementById("cost-provider-badge"),
+
+    btnStartJob: document.getElementById("btn-translate") || document.getElementById("btn-start-job"),
+    jobSpinner: document.getElementById("job-spinner"),
+    jobBtnText: document.getElementById("job-btn-text"),
+
+    jobCard: document.getElementById("job-card"),
+    jobIdBadge: document.getElementById("job-id-badge"),
+    jobStatusBadge: document.getElementById("job-status-badge"),
+    stageAnalyzing: document.getElementById("stage-analyzing"),
+    stageTranslating: document.getElementById("stage-translating"),
+    stageTranslatingLabel: document.getElementById("stage-translating-label"),
+    stageLayout: document.getElementById("stage-layout"),
+    stageRendering: document.getElementById("stage-rendering"),
+    jobResults: document.getElementById("job-results"),
+    jobStatFit: document.getElementById("job-stat-fit"),
+    jobStatShrunk: document.getElementById("job-stat-shrunk"),
+    jobStatExpanded: document.getElementById("job-stat-expanded"),
+    jobStatReview: document.getElementById("job-stat-review"),
+    jobReviewWarning: document.getElementById("job-review-warning"),
+    btnDownloadJobResult: document.getElementById("btn-download-job-result"),
+    jobErrorBanner: document.getElementById("job-error-banner"),
+    jobErrorMessage: document.getElementById("job-error-message"),
+    btnRetryJob: document.getElementById("btn-retry-job"),
+
+    // Modal
+    confirmModal: document.getElementById("confirm-modal"),
+    btnModalClose: document.getElementById("btn-modal-close"),
+    btnModalCancel: document.getElementById("btn-modal-cancel"),
+    btnModalConfirm: document.getElementById("btn-modal-confirm"),
+    modalFilename: document.getElementById("modal-filename"),
+    modalPages: document.getElementById("modal-pages"),
+    modalBlocks: document.getElementById("modal-blocks"),
+    modalTargetLang: document.getElementById("modal-target-lang"),
+    modalProvider: document.getElementById("modal-provider"),
 
     // Phase 3 Reconstruction Controls
     renderActions: document.getElementById("render-actions"),
@@ -337,13 +385,15 @@
 
     // 6. Reset Stepper state
     elements.step2.className = "stepper-item step-active";
-    elements.step2Status.textContent = "Listo para vista previa";
-    elements.btnTranslate.disabled = false;
+    elements.step2Status.textContent = "Listo para procesar";
+    if (elements.btnTranslate) elements.btnTranslate.disabled = false;
+    if (elements.btnStartJob) elements.btnStartJob.disabled = false;
 
+    if (elements.jobCard) elements.jobCard.classList.add("hidden");
     if (elements.renderActions) elements.renderActions.classList.add("hidden");
     if (elements.step3) {
       elements.step3.className = "stepper-item step-pending";
-      elements.step3Status.textContent = "Disponible tras vista previa";
+      elements.step3Status.textContent = "Encolado para job";
     }
 
     // 7. Transition view from upload to workspace
@@ -690,8 +740,373 @@
     });
   }
 
+  // ==========================================================================
+  // Phase 4 MVP: Capabilities, Mode Selection, Job Orchestration & Polling
+  // ==========================================================================
+
+  async function loadCapabilities() {
+    try {
+      const res = await fetch("/api/v1/capabilities");
+      if (res.ok) {
+        state.capabilities = await res.json();
+        updateCapabilitiesUI();
+      }
+    } catch (e) {
+      console.warn("No se pudieron cargar las capabilities del servidor:", e);
+    }
+  }
+
+  function updateCapabilitiesUI() {
+    if (!state.capabilities) return;
+    const { configured_translation_available, configured_provider } = state.capabilities;
+
+    if (elements.configuredProviderBadge) {
+      elements.configuredProviderBadge.textContent = configured_translation_available
+        ? configured_provider
+        : "No configurado";
+    }
+    if (elements.costProviderBadge) {
+      elements.costProviderBadge.textContent = configured_provider;
+    }
+    if (elements.modalProvider) {
+      elements.modalProvider.textContent = configured_provider;
+    }
+
+    if (!configured_translation_available) {
+      if (elements.radioModeConfigured) elements.radioModeConfigured.disabled = true;
+      if (elements.modeOptionConfigured) elements.modeOptionConfigured.classList.add("disabled");
+      if (elements.configuredProviderDesc) {
+        elements.configuredProviderDesc.textContent = "No hay proveedor externo configurado en el servidor.";
+      }
+    } else {
+      if (elements.radioModeConfigured) elements.radioModeConfigured.disabled = false;
+      if (elements.modeOptionConfigured) elements.modeOptionConfigured.classList.remove("disabled");
+      if (elements.configuredProviderDesc) {
+        elements.configuredProviderDesc.textContent = `Traducción lingüística mediante proveedor ${configured_provider}.`;
+      }
+    }
+  }
+
+  function handleModeChange() {
+    const selected = document.querySelector('input[name="translation-mode"]:checked');
+    const selectedMode = selected ? selected.value : "demo";
+
+    if (selectedMode === "demo") {
+      if (elements.modeOptionDemo) elements.modeOptionDemo.classList.add("active");
+      if (elements.modeOptionConfigured) elements.modeOptionConfigured.classList.remove("active");
+      if (elements.demoNoticeBanner) elements.demoNoticeBanner.classList.remove("hidden");
+      if (elements.costNoticeBanner) elements.costNoticeBanner.classList.add("hidden");
+      if (elements.jobBtnText) elements.jobBtnText.textContent = "Iniciar trabajo de traducción";
+    } else {
+      if (elements.modeOptionConfigured) elements.modeOptionConfigured.classList.add("active");
+      if (elements.modeOptionDemo) elements.modeOptionDemo.classList.remove("active");
+      if (elements.demoNoticeBanner) elements.demoNoticeBanner.classList.add("hidden");
+      if (elements.costNoticeBanner) elements.costNoticeBanner.classList.remove("hidden");
+      if (elements.jobBtnText) elements.jobBtnText.textContent = "Iniciar traducción real";
+    }
+  }
+
+  if (elements.radioModeDemo) elements.radioModeDemo.addEventListener("change", handleModeChange);
+  if (elements.radioModeConfigured) elements.radioModeConfigured.addEventListener("change", handleModeChange);
+
+  // Confirmation Modal
+  function openConfirmModal() {
+    if (!state.selectedFile) return;
+    if (elements.modalFilename) elements.modalFilename.textContent = state.selectedFile.name;
+    if (elements.modalPages) elements.modalPages.textContent = elements.statPages ? elements.statPages.textContent : "-";
+    if (elements.modalBlocks) elements.modalBlocks.textContent = elements.statBlocks ? elements.statBlocks.textContent : "-";
+    if (elements.modalTargetLang) elements.modalTargetLang.textContent = elements.selectTargetLang.value;
+    if (elements.modalProvider && state.capabilities) {
+      elements.modalProvider.textContent = state.capabilities.configured_provider;
+    }
+    if (elements.confirmModal) elements.confirmModal.classList.remove("hidden");
+  }
+
+  function closeConfirmModal() {
+    if (elements.confirmModal) elements.confirmModal.classList.add("hidden");
+  }
+
+  if (elements.btnModalClose) elements.btnModalClose.addEventListener("click", closeConfirmModal);
+  if (elements.btnModalCancel) elements.btnModalCancel.addEventListener("click", closeConfirmModal);
+  if (elements.confirmModal) {
+    elements.confirmModal.addEventListener("click", (e) => {
+      if (e.target === elements.confirmModal) closeConfirmModal();
+    });
+  }
+
+  // Launching Translation Job
+  if (elements.btnStartJob) {
+    elements.btnStartJob.addEventListener("click", () => {
+      if (!state.selectedFile) {
+        showAlert("Por favor, selecciona y analiza un archivo PDF primero.", "warning");
+        return;
+      }
+      const selected = document.querySelector('input[name="translation-mode"]:checked');
+      const selectedMode = selected ? selected.value : "demo";
+
+      if (selectedMode === "configured") {
+        openConfirmModal();
+      } else {
+        launchTranslationJob("demo", false);
+      }
+    });
+  }
+
+  if (elements.btnModalConfirm) {
+    elements.btnModalConfirm.addEventListener("click", () => {
+      closeConfirmModal();
+      launchTranslationJob("configured", true);
+    });
+  }
+
+  async function launchTranslationJob(mode, confirmed = false) {
+    if (!state.selectedFile) {
+      showAlert("Por favor, selecciona y analiza un archivo PDF primero.", "warning");
+      return;
+    }
+
+    elements.btnStartJob.disabled = true;
+    if (elements.jobSpinner) elements.jobSpinner.classList.remove("hidden");
+    if (elements.jobBtnText) elements.jobBtnText.textContent = "Iniciando trabajo...";
+
+    // Hide previous job results / errors
+    if (elements.jobResults) elements.jobResults.classList.add("hidden");
+    if (elements.jobErrorBanner) elements.jobErrorBanner.classList.add("hidden");
+    if (elements.jobReviewWarning) elements.jobReviewWarning.classList.add("hidden");
+
+    // Reset stages
+    resetJobStages();
+    if (elements.jobCard) elements.jobCard.classList.remove("hidden");
+    if (elements.jobStatusBadge) {
+      elements.jobStatusBadge.className = "job-status-badge badge badge-subtle";
+      elements.jobStatusBadge.textContent = "Iniciando";
+    }
+
+    const sourceLang = elements.selectSourceLang.value || "";
+    const targetLang = elements.selectTargetLang.value || "es";
+    const protectedTermsArray = Array.from(state.protectedTerms);
+
+    const formData = new FormData();
+    formData.append("file", state.selectedFile);
+    formData.append("target_language", targetLang);
+    if (sourceLang) formData.append("source_language", sourceLang);
+    formData.append("mode", mode);
+    if (mode === "configured") {
+      formData.append("confirm_configured", confirmed ? "true" : "false");
+    }
+    if (protectedTermsArray.length > 0) {
+      formData.append("protected_terms", JSON.stringify(protectedTermsArray));
+    }
+
+    try {
+      const response = await fetch("/api/v1/jobs", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        let errMsg = `Error ${response.status} al crear el trabajo`;
+        try {
+          const errData = await response.json();
+          if (errData && errData.detail) {
+            errMsg = typeof errData.detail === "string" ? errData.detail : JSON.stringify(errData.detail);
+          }
+        } catch (_) {}
+        throw new Error(errMsg);
+      }
+
+      const jobData = await response.json();
+      state.currentJobId = jobData.job_id;
+      if (elements.jobIdBadge) elements.jobIdBadge.textContent = `Job #${jobData.job_id.slice(0, 8)}`;
+      showAlert(`Trabajo de traducción #${jobData.job_id.slice(0, 8)} creado con éxito. Procesando...`, "info");
+
+      // Begin polling
+      if (state.jobPollTimer) clearInterval(state.jobPollTimer);
+      state.jobPollTimer = setInterval(() => pollJobStatus(state.currentJobId), 1000);
+      pollJobStatus(state.currentJobId);
+    } catch (err) {
+      elements.btnStartJob.disabled = false;
+      if (elements.jobSpinner) elements.jobSpinner.classList.add("hidden");
+      if (elements.jobBtnText) elements.jobBtnText.textContent = "Iniciar trabajo de traducción";
+      showJobError(err.message || "Error al iniciar el trabajo de traducción.");
+    }
+  }
+
+  function resetJobStages() {
+    const stages = [
+      elements.stageAnalyzing,
+      elements.stageTranslating,
+      elements.stageLayout,
+      elements.stageRendering,
+    ];
+    stages.forEach((el) => {
+      if (el) {
+        el.className = "job-stage-item stage-pending";
+        const icon = el.querySelector(".stage-icon");
+        if (icon) icon.textContent = "○";
+      }
+    });
+    if (elements.stageTranslatingLabel) {
+      elements.stageTranslatingLabel.textContent = "Traduciendo bloques";
+    }
+  }
+
+  async function pollJobStatus(jobId) {
+    if (!jobId || state.currentJobId !== jobId) return;
+
+    try {
+      const response = await fetch(`/api/v1/jobs/${jobId}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("El trabajo ha expirado o no fue encontrado en memoria.");
+        }
+        throw new Error(`Error ${response.status} consultando el trabajo.`);
+      }
+
+      const job = await response.json();
+      updateJobProgress(job);
+
+      if (job.status === "completed" || job.status === "failed") {
+        if (state.jobPollTimer) {
+          clearInterval(state.jobPollTimer);
+          state.jobPollTimer = null;
+        }
+      }
+    } catch (err) {
+      if (state.jobPollTimer) {
+        clearInterval(state.jobPollTimer);
+        state.jobPollTimer = null;
+      }
+      showJobError(err.message || "Error consultando el progreso del trabajo.");
+    }
+  }
+
+  function updateJobProgress(job) {
+    if (!job) return;
+
+    if (elements.jobStatusBadge) {
+      elements.jobStatusBadge.textContent = job.stage_message || job.status;
+    }
+
+    const setStage = (el, status, iconText) => {
+      if (!el) return;
+      el.className = `job-stage-item stage-${status}`;
+      const icon = el.querySelector(".stage-icon");
+      if (icon) icon.textContent = iconText;
+    };
+
+    if (job.status === "created") {
+      setStage(elements.stageAnalyzing, "pending", "○");
+      setStage(elements.stageTranslating, "pending", "○");
+      setStage(elements.stageLayout, "pending", "○");
+      setStage(elements.stageRendering, "pending", "○");
+    } else if (job.status === "analyzing") {
+      setStage(elements.stageAnalyzing, "active", "●");
+      setStage(elements.stageTranslating, "pending", "○");
+      setStage(elements.stageLayout, "pending", "○");
+      setStage(elements.stageRendering, "pending", "○");
+    } else if (job.status === "translating") {
+      setStage(elements.stageAnalyzing, "completed", "✓");
+      setStage(elements.stageTranslating, "active", "●");
+      if (elements.stageTranslatingLabel && job.translated_blocks !== null && job.total_blocks !== null) {
+        elements.stageTranslatingLabel.textContent = `Traduciendo bloques (${job.translated_blocks}/${job.total_blocks})`;
+      }
+      setStage(elements.stageLayout, "pending", "○");
+      setStage(elements.stageRendering, "pending", "○");
+    } else if (job.status === "layout") {
+      setStage(elements.stageAnalyzing, "completed", "✓");
+      setStage(elements.stageTranslating, "completed", "✓");
+      setStage(elements.stageLayout, "active", "●");
+      setStage(elements.stageRendering, "pending", "○");
+    } else if (job.status === "rendering") {
+      setStage(elements.stageAnalyzing, "completed", "✓");
+      setStage(elements.stageTranslating, "completed", "✓");
+      setStage(elements.stageLayout, "completed", "✓");
+      setStage(elements.stageRendering, "active", "●");
+    } else if (job.status === "completed") {
+      setStage(elements.stageAnalyzing, "completed", "✓");
+      setStage(elements.stageTranslating, "completed", "✓");
+      setStage(elements.stageLayout, "completed", "✓");
+      setStage(elements.stageRendering, "completed", "✓");
+
+      if (elements.jobStatusBadge) {
+        elements.jobStatusBadge.className = "job-status-badge badge badge-accent";
+        elements.jobStatusBadge.textContent = "Completado";
+      }
+
+      if (job.layout_stats) {
+        if (elements.jobStatFit) elements.jobStatFit.textContent = `${job.layout_stats.fit_count} ajuste`;
+        if (elements.jobStatShrunk) elements.jobStatShrunk.textContent = `${job.layout_stats.shrunk_count} reducidos`;
+        if (elements.jobStatExpanded) elements.jobStatExpanded.textContent = `${job.layout_stats.expanded_count} expandidos`;
+        if (elements.jobStatReview) elements.jobStatReview.textContent = `${job.layout_stats.review_required_count} revisión`;
+
+        if (elements.jobReviewWarning) {
+          if (job.layout_stats.review_required_count > 0) {
+            elements.jobReviewWarning.classList.remove("hidden");
+          } else {
+            elements.jobReviewWarning.classList.add("hidden");
+          }
+        }
+      }
+
+      if (elements.btnDownloadJobResult) {
+        elements.btnDownloadJobResult.href = `/api/v1/jobs/${job.job_id}/result`;
+      }
+      if (elements.jobResults) elements.jobResults.classList.remove("hidden");
+
+      elements.btnStartJob.disabled = false;
+      if (elements.jobSpinner) elements.jobSpinner.classList.add("hidden");
+      elements.jobBtnText.textContent = "Iniciar nuevo trabajo";
+
+      if (elements.step2) {
+        elements.step2.className = "stepper-item step-completed";
+        elements.step2Status.textContent = "Traducción completada";
+      }
+      if (elements.step3) {
+        elements.step3.className = "stepper-item step-completed";
+        elements.step3Status.textContent = "PDF reconstruido y descargable";
+      }
+      showAlert("Trabajo completado con éxito. El PDF traducido está listo para descargar.", "success");
+    } else if (job.status === "failed") {
+      showJobError(job.error_message || "Error en el procesamiento del trabajo.");
+    }
+  }
+
+  function showJobError(msg) {
+    if (elements.jobStatusBadge) {
+      elements.jobStatusBadge.className = "job-status-badge badge badge-danger";
+      elements.jobStatusBadge.textContent = "Fallo";
+    }
+    if (elements.jobErrorMessage) {
+      elements.jobErrorMessage.textContent = msg;
+    }
+    if (elements.jobErrorBanner) {
+      elements.jobErrorBanner.classList.remove("hidden");
+    }
+    elements.btnStartJob.disabled = false;
+    if (elements.jobSpinner) elements.jobSpinner.classList.add("hidden");
+    elements.jobBtnText.textContent = "Iniciar trabajo de traducción";
+    showAlert(msg, "danger");
+  }
+
+  if (elements.btnRetryJob) {
+    elements.btnRetryJob.addEventListener("click", () => {
+      const selected = document.querySelector('input[name="translation-mode"]:checked');
+      const selectedMode = selected ? selected.value : "demo";
+      if (selectedMode === "configured") {
+        openConfirmModal();
+      } else {
+        launchTranslationJob("demo", false);
+      }
+    });
+  }
+
+  // Load server capabilities on startup
+  loadCapabilities();
+
   // Cleanup on unload
   window.addEventListener("beforeunload", () => {
+    if (state.jobPollTimer) clearInterval(state.jobPollTimer);
     cleanPreviewUrl();
   });
 })();
