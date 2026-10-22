@@ -1,6 +1,8 @@
 # Tradux
 
-Tradux es una aplicación para traducir documentos entre idiomas preservando al máximo su maquetación original.
+**Tradux** es un MVP de traducción de **PDF digitales con texto seleccionable** que busca conservar el diseño original al reconstruir el documento traducido. Separa el análisis de PDF, la traducción, las decisiones de layout y el renderizado para facilitar pruebas y cambios de proveedor.
+
+**Estado implementado (v0.1):** API y Web Workbench con **Python, FastAPI, PyMuPDF y Jinja2**, análisis estructural de documentos, motor de traducción con proveedor intercambiable, reconstrucción PDF, gestión temporal de trabajos y pruebas con `pytest`. Incluye un modo de demostración determinista sin llamadas a servicios externos; un proveedor real requiere configuración y confirmación explícita. **No incluye OCR ni garantiza equivalencia tipográfica perfecta para todos los PDFs.**
 
 ## Objetivo inicial
 
@@ -40,14 +42,14 @@ Fuera de alcance inicialmente:
 - colaboración multiusuario;
 - facturación o SaaS público.
 
-## Arquitectura propuesta
+## Arquitectura del MVP y evolución prevista
 
 - **Backend:** Python + FastAPI
 - **Motor PDF:** PyMuPDF
 - **Traducción:** interfaz de proveedor intercambiable
-- **Frontend inicial:** interfaz web ligera; se evaluará React/Next.js cuando el flujo base esté estable
-- **Persistencia:** inicialmente sistema de archivos y metadatos simples; PostgreSQL cuando exista historial de trabajos
-- **Procesamiento asíncrono:** se incorporará Redis/worker cuando los trabajos largos lo requieran
+- **Frontend implementado:** Web Workbench con Jinja2, CSS y JavaScript; React/Next.js queda como alternativa futura
+- **Persistencia actual:** trabajos temporales en memoria (`JobStore`), con límites de capacidad y TTL; PostgreSQL se reserva para una fase futura con historial persistente
+- **Trabajos de larga duración:** Redis/worker sigue fuera del MVP; se evaluará si resulta necesario
 - **Contenedores:** Docker
 - **Pruebas:** pytest
 
